@@ -1,0 +1,1 @@
+export default function Home(){return <main className="wrap"><div className="card"><h1>Encuentra especialistas confiables cerca de ti</h1><p className="muted">Versión 0.1 del marketplace: registro, acceso, clientes y perfiles profesionales.</p><p><a href="/register"><button>Crear una cuenta</button></a></p><p><a href="/especialistas">Ver especialistas</a></p></div></main>}

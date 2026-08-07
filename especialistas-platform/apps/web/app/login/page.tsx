@@ -1,0 +1,3 @@
+'use client';
+import {useState} from 'react'; import {api} from '../../lib/api';
+export default function Login(){const [m,setM]=useState(''); async function submit(e:any){e.preventDefault();const f=new FormData(e.currentTarget);try{const r=await api('/auth/login',{method:'POST',body:JSON.stringify(Object.fromEntries(f))});localStorage.setItem('token',r.accessToken);location.href='/dashboard'}catch(err:any){setM(err.message)}}return <main className="wrap"><div className="card"><h1>Iniciar sesión</h1><form onSubmit={submit}><input name="email" type="email" placeholder="Correo" required/><input name="password" type="password" placeholder="Contraseña" required/><button>Entrar</button></form>{m&&<p className="error">{m}</p>}</div></main>}
