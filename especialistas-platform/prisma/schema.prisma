@@ -26,53 +26,56 @@ enum VerificationStatus {
 }
 
 model User {
-  id           String       @id @default(uuid())
+  id           String      @id @default(uuid())
   name         String
-  email        String       @unique
+  email        String      @unique
   phone        String?
   passwordHash String
   role         UserRole
-  status       UserStatus   @default(ACTIVE)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  status       UserStatus  @default(ACTIVE)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
   client       Client?
   specialist   Specialist?
   locations    Location[]
 }
 
 model Client {
-  id          String   @id @default(uuid())
-  userId      String   @unique
-  clientType  String   @default("INDIVIDUAL")
+  id          String       @id @default(uuid())
+  userId      String       @unique
+  clientType  String       @default("INDIVIDUAL")
   companyName String?
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobRequests JobRequest[]
+  createdAt   DateTime     @default(now())
 }
 
 model Specialist {
-  id                 String                 @id @default(uuid())
-  userId             String                 @unique
+  id                 String               @id @default(uuid())
+  userId             String               @unique
   description        String?
-  experienceYears    Int                    @default(0)
-  hourlyRate         Decimal?               @db.Decimal(10,2)
-  availabilityStatus String                 @default("AVAILABLE")
-  verificationStatus VerificationStatus     @default(PENDING)
-  trustScore         Int                    @default(0)
-  user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  experienceYears    Int                  @default(0)
+  hourlyRate         Decimal?             @db.Decimal(10, 2)
+  availabilityStatus String               @default("AVAILABLE")
+  verificationStatus VerificationStatus   @default(PENDING)
+  trustScore         Int                  @default(0)
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   categories         SpecialistCategory[]
   documents          Document[]
   portfolioItems     PortfolioItem[]
-  createdAt          DateTime               @default(now())
-  updatedAt          DateTime               @updatedAt
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  proposals          Proposal[]
 }
 
 model Category {
-  id          String                 @id @default(uuid())
-  name        String                 @unique
-  slug        String                 @unique
+  id          String               @id @default(uuid())
+  name        String               @unique
+  slug        String               @unique
   description String?
-  active      Boolean                @default(true)
+  active      Boolean              @default(true)
   specialists SpecialistCategory[]
+  jobRequests JobRequest[]
 }
 
 model SpecialistCategory {
@@ -85,14 +88,14 @@ model SpecialistCategory {
 }
 
 model Location {
-  id        String  @id @default(uuid())
+  id        String   @id @default(uuid())
   userId    String
   address   String?
   city      String
   state     String
   zipcode   String?
-  latitude  Decimal? @db.Decimal(10,7)
-  longitude Decimal? @db.Decimal(10,7)
+  latitude  Decimal? @db.Decimal(10, 7)
+  longitude Decimal? @db.Decimal(10, 7)
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -115,4 +118,59 @@ model PortfolioItem {
   imageUrl     String?
   specialist   Specialist @relation(fields: [specialistId], references: [id], onDelete: Cascade)
   createdAt    DateTime   @default(now())
+}
+
+enum JobRequestStatus {
+  DRAFT
+  PUBLISHED
+  RECEIVING_QUOTES
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model JobRequest {
+  id          String           @id @default(uuid())
+  clientId    String
+  categoryId  String
+  title       String
+  description String
+  budgetMin   Decimal?         @db.Decimal(10, 2)
+  budgetMax   Decimal?         @db.Decimal(10, 2)
+  city        String
+  state       String
+  zipcode     String?
+  desiredDate DateTime?
+  status      JobRequestStatus @default(PUBLISHED)
+  client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  category    Category         @relation(fields: [categoryId], references: [id])
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  proposals   Proposal[]
+}
+
+enum ProposalStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+model Proposal {
+  id            String         @id @default(uuid())
+  jobRequestId  String
+  specialistId  String
+  amount        Decimal        @db.Decimal(10, 2)
+  message       String?
+  availableDate DateTime?
+  status        ProposalStatus @default(PENDING)
+
+  jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobRequestId, specialistId])
 }

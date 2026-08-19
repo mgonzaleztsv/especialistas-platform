@@ -17,13 +17,36 @@ export class SpecialistsController {
     });
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('me/profile')
+  getMyProfile(@Req() req:any) {
+    return this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId },
+      include: {
+        user: {
+          select: {
+            name: true,
+            locations: true
+          }
+        },
+        categories: {
+          include: {
+            category: true
+          }
+        },
+        documents: true,
+        portfolioItems: true
+      }
+    });
+  }
+
   @Get(':id')
   one(@Param('id') id:string){return this.prisma.specialist.findUnique({where:{id},include:{user:{select:{name:true,locations:true}},categories:{include:{category:true}},documents:true,portfolioItems:true}});}
 
   @UseGuards(JwtAuthGuard)
   @Patch('me/profile')
   async updateMe(@Req() req:any,@Body() body:any){
-    const { categoryIds = [], location, ...profile } = body;
+    const { categoryIds = [], location, profile } = body;
     const specialist = await this.prisma.specialist.update({where:{userId:req.user.userId},data:profile});
     if (Array.isArray(categoryIds)) {
       await this.prisma.specialistCategory.deleteMany({where:{specialistId:specialist.id}});

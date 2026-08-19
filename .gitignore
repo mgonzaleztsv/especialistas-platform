@@ -1,0 +1,29 @@
+# Dependencias
+node_modules/
+**/node_modules/
+
+# Next.js
+.next/
+**/.next/
+
+# Compilaciones
+dist/
+**/dist/
+
+# Variables de entorno y secretos
+.env
+.env.*
+**/.env
+**/.env.*
+
+# VS Code / Codespaces local
+.vscode/
+
+# Copias de seguridad
+*.bak
+*.backup.*
+*.backup-*
+*.mis-trabajos-ok
+
+# Sistema operativo
+.DS_Store

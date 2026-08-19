@@ -1,0 +1,224 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { api } from '../../lib/api';
+
+export default function PerfilEspecialista() {
+  const [categories, setCategories] = useState<any[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+
+  const [form, setForm] = useState({
+    description: '',
+    experienceYears: 0,
+    hourlyRate: '',
+    availabilityStatus: 'DISPONIBLE',
+    city: '',
+    state: '',
+    zipcode: ''
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const [categoryData, profile] = await Promise.all([
+          api('/categories'),
+          api('/specialists/me/profile')
+        ]);
+
+        setCategories(categoryData);
+
+        if (profile) {
+          const location = profile.user?.locations?.[0];
+
+          setForm({
+            description: profile.description || '',
+            experienceYears: profile.experienceYears || 0,
+            hourlyRate:
+              profile.hourlyRate !== null && profile.hourlyRate !== undefined
+                ? String(profile.hourlyRate)
+                : '',
+            availabilityStatus:
+              profile.availabilityStatus || 'DISPONIBLE',
+            city: location?.city || '',
+            state: location?.state || '',
+            zipcode: location?.zipcode || ''
+          });
+
+          setSelectedCategories(
+            profile.categories?.map((x: any) => x.category.id) || []
+          );
+        }
+      } catch (e: any) {
+        setError(e.message || 'No se pudo cargar el perfil.');
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, []);
+
+  function updateField(name: string, value: any) {
+    setForm((prev) => ({
+      ...prev,
+      [name]: value
+    }));
+  }
+
+  function toggleCategory(id: string) {
+    setSelectedCategories((prev) =>
+      prev.includes(id)
+        ? prev.filter((x) => x !== id)
+        : [...prev, id]
+    );
+  }
+
+  async function saveProfile(e: React.FormEvent) {
+    e.preventDefault();
+
+    setMessage('');
+    setError('');
+
+    try {
+      await api('/specialists/me/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          profile: {
+            description: form.description,
+            experienceYears: Number(form.experienceYears),
+            hourlyRate: form.hourlyRate
+              ? Number(form.hourlyRate)
+              : null,
+            availabilityStatus: form.availabilityStatus
+          },
+          categoryIds: selectedCategories,
+          location: {
+            city: form.city,
+            state: form.state,
+            zipcode: form.zipcode
+          }
+        })
+      });
+
+      setMessage('Perfil guardado correctamente.');
+    } catch (e: any) {
+      setError(e.message || 'No se pudo guardar el perfil.');
+    }
+  }
+
+  if (loading) {
+    return (
+      <main className="wrap">
+        <p>Cargando perfil...</p>
+      </main>
+    );
+  }
+
+  return (
+    <main className="wrap">
+      <div className="card">
+        <h1>Editar mi perfil profesional</h1>
+
+        <p>
+          Actualiza la información que los clientes verán en tu perfil.
+        </p>
+
+        <form onSubmit={saveProfile}>
+          <label>Descripción profesional</label>
+          <textarea
+            value={form.description}
+            onChange={(e) => updateField('description', e.target.value)}
+            rows={5}
+          />
+
+          <label>Años de experiencia</label>
+          <input
+            type="number"
+            min="0"
+            value={form.experienceYears}
+            onChange={(e) =>
+              updateField('experienceYears', e.target.value)
+            }
+          />
+
+          <label>Tarifa por hora (USD)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={form.hourlyRate}
+            onChange={(e) => updateField('hourlyRate', e.target.value)}
+          />
+
+          <label>Disponibilidad</label>
+          <select
+            value={form.availabilityStatus}
+            onChange={(e) =>
+              updateField('availabilityStatus', e.target.value)
+            }
+          >
+            <option value="DISPONIBLE">Disponible</option>
+            <option value="OCUPADO">Ocupado</option>
+            <option value="NO_DISPONIBLE">No disponible</option>
+          </select>
+
+          <h2>Zona de trabajo</h2>
+
+          <label>Ciudad</label>
+          <input
+            value={form.city}
+            onChange={(e) => updateField('city', e.target.value)}
+          />
+
+          <label>Estado</label>
+          <input
+            value={form.state}
+            onChange={(e) => updateField('state', e.target.value)}
+          />
+
+          <label>Código postal</label>
+          <input
+            value={form.zipcode}
+            onChange={(e) => updateField('zipcode', e.target.value)}
+          />
+
+          <h2>Especialidades</h2>
+
+          {categories.map((category) => (
+            <label
+              key={category.id}
+              style={{ display: 'block', marginBottom: '8px' }}
+            >
+              <input
+                type="checkbox"
+                checked={selectedCategories.includes(category.id)}
+                onChange={() => toggleCategory(category.id)}
+              />{' '}
+              {category.name}
+            </label>
+          ))}
+
+          <br />
+
+          <button type="submit">Guardar cambios</button>
+
+          {message && (
+            <p style={{ color: 'green' }}>{message}</p>
+          )}
+
+          {error && (
+            <p style={{ color: 'red' }}>{error}</p>
+          )}
+        </form>
+
+        <p>
+          <a href="/dashboard">Volver al panel</a>
+        </p>
+      </div>
+    </main>
+  );
+}
