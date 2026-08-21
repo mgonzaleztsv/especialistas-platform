@@ -104,8 +104,22 @@ export default function MisSolicitudes() {
             </p>
 
             <p>
-              <strong>Estado:</strong> {job.status}
+              <strong>Estado:</strong>{' '}
+              {job.status === 'ASSIGNED'
+                ? 'Asignado'
+                : job.status === 'IN_PROGRESS'
+                  ? 'En progreso'
+                  : job.status === 'COMPLETED'
+                    ? 'Completado'
+                    : job.status}
             </p>
+
+            {job.proposals?.[0]?.specialist?.user?.name && (
+              <p>
+                <strong>Especialista contratado:</strong>{' '}
+                {job.proposals[0].specialist.user.name}
+              </p>
+            )}
 
             {job.desiredDate && (
               <p>

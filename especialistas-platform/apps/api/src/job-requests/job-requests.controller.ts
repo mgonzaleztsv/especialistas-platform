@@ -374,7 +374,27 @@ export class JobRequestsController {
     return this.prisma.jobRequest.findMany({
       where: { clientId: client.id },
       include: {
-        category: true
+        category: true,
+        proposals: {
+          where: {
+            status: 'ACCEPTED'
+          },
+          select: {
+            id: true,
+            amount: true,
+            specialist: {
+              select: {
+                id: true,
+                user: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                }
+              }
+            }
+          }
+        }
       },
       orderBy: {
         createdAt: 'desc'
