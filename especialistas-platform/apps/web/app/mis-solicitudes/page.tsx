@@ -115,10 +115,17 @@ export default function MisSolicitudes() {
             </p>
 
             {job.proposals?.[0]?.specialist?.user?.name && (
-              <p>
-                <strong>Especialista contratado:</strong>{' '}
-                {job.proposals[0].specialist.user.name}
-              </p>
+              <>
+                <p>
+                  <strong>Especialista contratado:</strong>{' '}
+                  {job.proposals[0].specialist.user.name}
+                </p>
+
+                <p>
+                  <strong>Precio acordado:</strong> $
+                  {Number(job.proposals[0].amount).toFixed(2)}
+                </p>
+              </>
             )}
 
             {job.desiredDate && (
