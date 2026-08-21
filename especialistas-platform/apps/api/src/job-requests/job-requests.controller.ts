@@ -151,6 +151,10 @@ export class JobRequestsController {
       throw new Error('La solicitud no existe o no pertenece al cliente');
     }
 
+    if (jobRequest.status !== 'PUBLISHED') {
+      throw new Error('Este trabajo ya no acepta propuestas');
+    }
+
     const proposal = await this.prisma.proposal.findFirst({
       where: {
         id: proposalId,
