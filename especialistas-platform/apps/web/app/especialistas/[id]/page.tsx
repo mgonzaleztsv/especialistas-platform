@@ -96,6 +96,42 @@ export default function SpecialistProfile() {
             : 'Sin especialidades registradas'}
         </p>
 
+        <h2>Calificaciones</h2>
+
+        {specialist.reviews?.length ? (
+          <>
+            <p>
+              <strong>Promedio:</strong>{' '}
+              {(
+                specialist.reviews.reduce(
+                  (sum: number, review: any) => sum + review.rating,
+                  0
+                ) / specialist.reviews.length
+              ).toFixed(1)}{' '}
+              / 5 ({specialist.reviews.length}{' '}
+              {specialist.reviews.length === 1 ? 'reseña' : 'reseñas'})
+            </p>
+
+            {specialist.reviews.map((review: any, index: number) => (
+              <div key={index} style={{ marginBottom: '16px' }}>
+                <p>
+                  <strong>Calificación:</strong> {review.rating} / 5
+                </p>
+
+                {review.comment && <p>{review.comment}</p>}
+
+                <p>
+                  <small>
+                    {new Date(review.createdAt).toLocaleDateString()}
+                  </small>
+                </p>
+              </div>
+            ))}
+          </>
+        ) : (
+          <p>Aún no hay calificaciones.</p>
+        )}
+
         <h2>Portafolio</h2>
 
         {specialist.portfolioItems?.length ? (

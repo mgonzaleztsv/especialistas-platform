@@ -41,7 +41,16 @@ export class SpecialistsController {
   }
 
   @Get(':id')
-  one(@Param('id') id:string){return this.prisma.specialist.findUnique({where:{id},include:{user:{select:{name:true,locations:true}},categories:{include:{category:true}},documents:true,portfolioItems:true}});}
+  one(@Param('id') id:string){return this.prisma.specialist.findUnique({where:{id},include:{user:{select:{name:true,locations:true}},categories:{include:{category:true}},documents:true,portfolioItems:true,reviews:{
+    select:{
+      rating:true,
+      comment:true,
+      createdAt:true
+    },
+    orderBy:{
+      createdAt:'desc'
+    }
+  }}});}
 
   @UseGuards(JwtAuthGuard)
   @Patch('me/profile')
