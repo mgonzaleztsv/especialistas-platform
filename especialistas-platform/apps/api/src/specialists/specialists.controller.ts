@@ -13,7 +13,7 @@ export class SpecialistsController {
         categories: category ? {some:{category:{slug:category}}}:undefined,
         user: city ? {locations:{some:{city:{contains:city,mode:'insensitive'}}}}:undefined
       },
-      include:{user:{select:{id:true,name:true,locations:true}},categories:{include:{category:true}},portfolioItems:true}
+      include:{user:{select:{id:true,name:true,locations:true}},categories:{include:{category:true}},portfolioItems:true,reviews:{select:{rating:true}}}
     });
   }
 

@@ -142,6 +142,18 @@ export default function Specialists() {
               </p>
 
               <p>
+                <strong>Calificación:</strong>{' '}
+                {s.reviews?.length
+                  ? `${(
+                      s.reviews.reduce(
+                        (sum: number, review: any) => sum + review.rating,
+                        0
+                      ) / s.reviews.length
+                    ).toFixed(1)} / 5 (${s.reviews.length})`
+                  : 'Sin calificaciones'}
+              </p>
+
+              <p>
                 {s.categories?.length
                   ? s.categories
                       .map((x: any) => x.category.name)
