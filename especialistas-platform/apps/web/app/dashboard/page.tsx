@@ -45,6 +45,20 @@ export default function Dashboard() {
           <>
             <p>Tu perfil profesional ya existe.</p>
 
+          <p>
+            <strong>Calificación:</strong>{' '}
+            {u.specialist?.reviews?.length
+              ? `${(
+                  u.specialist.reviews.reduce(
+                    (sum: number, review: any) => sum + review.rating,
+                    0
+                  ) / u.specialist.reviews.length
+                ).toFixed(1)} / 5 (${u.specialist.reviews.length} ${
+                  u.specialist.reviews.length === 1 ? 'reseña' : 'reseñas'
+                })`
+              : 'Sin calificaciones'}
+          </p>
+
             <p>
               Completa tu información profesional para que los clientes puedan
               encontrarte y conocerte mejor.
