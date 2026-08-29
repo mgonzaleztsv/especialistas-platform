@@ -365,6 +365,70 @@ export class JobRequestsController {
     });
   }
 
+  @Post(':id/review')
+  async createReview(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Body() body: any
+  ) {
+    const client = await this.prisma.client.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!client) {
+      throw new Error('El usuario no tiene perfil de cliente');
+    }
+
+    const rating = Number(body.rating);
+
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      throw new Error('La calificación debe ser un número entero entre 1 y 5');
+    }
+
+    const jobRequest = await this.prisma.jobRequest.findFirst({
+      where: {
+        id: jobRequestId,
+        clientId: client.id,
+        status: 'COMPLETED'
+      },
+      include: {
+        proposals: {
+          where: {
+            status: 'ACCEPTED'
+          },
+          select: {
+            specialistId: true
+          }
+        },
+        review: true
+      }
+    });
+
+    if (!jobRequest) {
+      throw new Error('El trabajo no existe, no pertenece al cliente o no está completado');
+    }
+
+    if (jobRequest.review) {
+      throw new Error('Este trabajo ya fue calificado');
+    }
+
+    const acceptedProposal = jobRequest.proposals[0];
+
+    if (!acceptedProposal) {
+      throw new Error('No se encontró al especialista contratado');
+    }
+
+    return this.prisma.review.create({
+      data: {
+        jobRequestId: jobRequest.id,
+        clientId: client.id,
+        specialistId: acceptedProposal.specialistId,
+        rating,
+        comment: body.comment?.trim() || null
+      }
+    });
+  }
+
   @Get('me')
   async myRequests(@Req() req: any) {
     const client = await this.prisma.client.findUnique({
@@ -379,6 +443,7 @@ export class JobRequestsController {
       where: { clientId: client.id },
       include: {
         category: true,
+        review: true,
         proposals: {
           where: {
             status: 'ACCEPTED'

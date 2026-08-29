@@ -47,6 +47,7 @@ model Client {
   companyName String?
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   jobRequests JobRequest[]
+  reviews     Review[]
   createdAt   DateTime     @default(now())
 }
 
@@ -66,6 +67,7 @@ model Specialist {
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   proposals          Proposal[]
+  reviews          Review[]
 }
 
 model Category {
@@ -148,6 +150,7 @@ model JobRequest {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   proposals   Proposal[]
+  review      Review?
 }
 
 enum ProposalStatus {
@@ -173,4 +176,24 @@ model Proposal {
   updatedAt DateTime @updatedAt
 
   @@unique([jobRequestId, specialistId])
+}
+
+
+model Review {
+  id           String   @id @default(uuid())
+  jobRequestId String   @unique
+  clientId     String
+  specialistId String
+  rating       Int
+  comment      String?
+
+  jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([specialistId])
 }
