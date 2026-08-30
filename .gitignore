@@ -27,3 +27,6 @@ dist/
 
 # Sistema operativo
 .DS_Store
+
+# Cache de TypeScript
+*.tsbuildinfo

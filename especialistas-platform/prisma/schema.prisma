@@ -48,6 +48,7 @@ model Client {
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   jobRequests JobRequest[]
   reviews     Review[]
+  specialistReviews SpecialistReview[]
   createdAt   DateTime     @default(now())
 }
 
@@ -68,6 +69,7 @@ model Specialist {
   updatedAt          DateTime             @updatedAt
   proposals          Proposal[]
   reviews          Review[]
+  clientReviews SpecialistReview[]
 }
 
 model Category {
@@ -151,6 +153,7 @@ model JobRequest {
   updatedAt   DateTime         @updatedAt
   proposals   Proposal[]
   review      Review?
+  specialistReview SpecialistReview?
 }
 
 enum ProposalStatus {
@@ -196,4 +199,24 @@ model Review {
 
   @@index([clientId])
   @@index([specialistId])
+}
+
+
+model SpecialistReview {
+  id           String   @id @default(uuid())
+  jobRequestId String   @unique
+  specialistId String
+  clientId     String
+  rating       Int
+  comment      String?
+
+  jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+  client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([specialistId])
+  @@index([clientId])
 }

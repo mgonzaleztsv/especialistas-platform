@@ -275,6 +275,61 @@ export class JobRequestsController {
     });
   }
 
+  @Post('specialist/my-jobs/:id/review')
+  async createSpecialistReview(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Body() body: any
+  ) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!specialist) {
+      throw new Error('El usuario no tiene perfil de especialista');
+    }
+
+    const rating = Number(body.rating);
+
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      throw new Error('La calificación debe ser un número entero entre 1 y 5');
+    }
+
+    const jobRequest = await this.prisma.jobRequest.findFirst({
+      where: {
+        id: jobRequestId,
+        status: 'COMPLETED',
+        proposals: {
+          some: {
+            specialistId: specialist.id,
+            status: 'ACCEPTED'
+          }
+        }
+      },
+      include: {
+        specialistReview: true
+      }
+    });
+
+    if (!jobRequest) {
+      throw new Error('El trabajo no está completado o no pertenece a este especialista');
+    }
+
+    if (jobRequest.specialistReview) {
+      throw new Error('Este cliente ya fue calificado para este trabajo');
+    }
+
+    return this.prisma.specialistReview.create({
+      data: {
+        jobRequestId: jobRequest.id,
+        specialistId: specialist.id,
+        clientId: jobRequest.clientId,
+        rating,
+        comment: body.comment?.trim() || null
+      }
+    });
+  }
+
   @Get('specialist/my-jobs')
   async getSpecialistMyJobs(@Req() req: any) {
     const specialist = await this.prisma.specialist.findUnique({
@@ -299,6 +354,7 @@ export class JobRequestsController {
       },
       include: {
         category: true,
+        specialistReview: true,
         proposals: {
           where: {
             specialistId: specialist.id,
