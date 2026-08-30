@@ -505,6 +505,53 @@ export class JobRequestsController {
     });
   }
 
+  @Patch(':id/cancel')
+  async cancelJobRequest(
+    @Req() req: any,
+    @Param('id') jobRequestId: string
+  ) {
+    const client = await this.prisma.client.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!client) {
+      throw new Error('El usuario no tiene perfil de cliente');
+    }
+
+    const jobRequest = await this.prisma.jobRequest.findFirst({
+      where: {
+        id: jobRequestId,
+        clientId: client.id,
+        status: {
+          in: ['DRAFT', 'PUBLISHED', 'RECEIVING_QUOTES']
+        }
+      }
+    });
+
+    if (!jobRequest) {
+      throw new Error(
+        'La solicitud no puede cancelarse porque ya fue asignada, está en proceso o terminó'
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.proposal.updateMany({
+        where: {
+          jobRequestId,
+          status: 'PENDING'
+        },
+        data: {
+          status: 'REJECTED'
+        }
+      });
+
+      return tx.jobRequest.update({
+        where: { id: jobRequestId },
+        data: { status: 'CANCELLED' }
+      });
+    });
+  }
+
   @Get('me')
   async myRequests(@Req() req: any) {
     const client = await this.prisma.client.findUnique({

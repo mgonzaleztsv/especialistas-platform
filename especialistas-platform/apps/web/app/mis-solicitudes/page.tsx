@@ -105,6 +105,28 @@ export default function MisSolicitudes() {
     }
   }
 
+
+  async function cancelJob(jobId: string) {
+    const confirmed = window.confirm(
+      '¿Seguro que quieres cancelar esta solicitud?'
+    );
+
+    if (!confirmed) return;
+
+    setError('');
+
+    try {
+      await api(`/job-requests/${jobId}/cancel`, {
+        method: 'PATCH'
+      });
+
+      const updated = await api('/job-requests/me');
+      setItems(updated);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo cancelar la solicitud.');
+    }
+  }
+
   return (
     <main className="wrap">
       <h1>Mis solicitudes</h1>
@@ -144,7 +166,9 @@ export default function MisSolicitudes() {
                   ? 'En progreso'
                   : job.status === 'COMPLETED'
                     ? 'Completado'
-                    : job.status}
+                    : job.status === 'CANCELLED'
+                      ? 'Cancelado'
+                      : job.status}
             </p>
 
             {job.proposals?.[0]?.specialist?.user?.name && (
@@ -250,6 +274,16 @@ export default function MisSolicitudes() {
                   </>
                 )}
               </div>
+            )}
+
+            {['DRAFT', 'PUBLISHED', 'RECEIVING_QUOTES'].includes(job.status) && (
+              <button
+                type="button"
+                onClick={() => cancelJob(job.id)}
+                style={{ marginBottom: '8px' }}
+              >
+                Cancelar solicitud
+              </button>
             )}
 
             <button
