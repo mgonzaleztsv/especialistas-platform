@@ -90,6 +90,20 @@ export default function Dashboard() {
           <>
             <p>Tu perfil de cliente está listo.</p>
 
+          <p>
+            <strong>Calificación:</strong>{' '}
+            {u.client?.specialistReviews?.length
+              ? `${(
+                  u.client.specialistReviews.reduce(
+                    (sum: number, review: any) => sum + review.rating,
+                    0
+                  ) / u.client.specialistReviews.length
+                ).toFixed(1)} / 5 (${u.client.specialistReviews.length} ${
+                  u.client.specialistReviews.length === 1 ? 'reseña' : 'reseñas'
+                })`
+              : 'Sin calificaciones'}
+          </p>
+
             <p>
               <a href="/publicar-trabajo">
                 Publicar trabajo

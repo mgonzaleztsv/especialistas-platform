@@ -8,6 +8,6 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   me(@Req() req:any) {
-    return this.prisma.user.findUnique({ where:{id:req.user.userId}, select:{id:true,name:true,email:true,phone:true,role:true,status:true,client:true,specialist:{include:{reviews:{select:{rating:true}}}},locations:true} });
+    return this.prisma.user.findUnique({ where:{id:req.user.userId}, select:{id:true,name:true,email:true,phone:true,role:true,status:true,client:{include:{specialistReviews:{select:{rating:true}}}},specialist:{include:{reviews:{select:{rating:true}}}},locations:true} });
   }
 }
