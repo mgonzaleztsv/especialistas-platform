@@ -114,6 +114,18 @@ export default function TrabajosDisponibles() {
               </p>
             )}
 
+            <p>
+              <strong>Calificación del cliente:</strong>{' '}
+              {job.client?.specialistReviews?.length
+                ? `${(
+                    job.client.specialistReviews.reduce(
+                      (sum: number, review: any) => sum + review.rating,
+                      0
+                    ) / job.client.specialistReviews.length
+                  ).toFixed(1)} / 5 (${job.client.specialistReviews.length})`
+                : 'Sin calificaciones'}
+            </p>
+
             {proposalJobId !== job.id ? (
               <button
                 type="button"

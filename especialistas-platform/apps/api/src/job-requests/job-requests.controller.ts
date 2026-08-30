@@ -118,7 +118,16 @@ export class JobRequestsController {
           : {})
       },
       include: {
-        category: true
+        category: true,
+        client: {
+          select: {
+            specialistReviews: {
+              select: {
+                rating: true
+              }
+            }
+          }
+        }
       },
       orderBy: {
         createdAt: 'desc'
