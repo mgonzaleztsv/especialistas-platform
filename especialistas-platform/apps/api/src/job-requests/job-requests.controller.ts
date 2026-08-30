@@ -83,6 +83,39 @@ export class JobRequestsController {
     });
   }
 
+  @Patch(':jobId/proposals/:proposalId/withdraw')
+  async withdrawProposal(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string,
+    @Param('proposalId') proposalId: string
+  ) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!specialist) {
+      throw new Error('El usuario no tiene perfil de especialista');
+    }
+
+    const proposal = await this.prisma.proposal.findFirst({
+      where: {
+        id: proposalId,
+        jobRequestId,
+        specialistId: specialist.id,
+        status: 'PENDING'
+      }
+    });
+
+    if (!proposal) {
+      throw new Error('La propuesta no existe, no te pertenece o ya no puede retirarse');
+    }
+
+    return this.prisma.proposal.update({
+      where: { id: proposal.id },
+      data: { status: 'WITHDRAWN' }
+    });
+  }
+
   @Get('available')
   async available(@Req() req: any) {
     const specialist = await this.prisma.specialist.findUnique({
@@ -126,6 +159,15 @@ export class JobRequestsController {
                 rating: true
               }
             }
+          }
+        },
+        proposals: {
+          where: {
+            specialistId: specialist.id
+          },
+          select: {
+            id: true,
+            status: true
           }
         }
       },

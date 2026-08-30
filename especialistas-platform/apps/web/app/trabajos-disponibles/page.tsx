@@ -60,6 +60,30 @@ export default function TrabajosDisponibles() {
     }
   }
 
+
+  async function withdrawProposal(jobId: string, proposalId: string) {
+    const confirmed = window.confirm(
+      '¿Seguro que quieres retirar esta propuesta?'
+    );
+
+    if (!confirmed) return;
+
+    setError('');
+    setSuccess('');
+
+    try {
+      await api(`/job-requests/${jobId}/proposals/${proposalId}/withdraw`, {
+        method: 'PATCH'
+      });
+
+      const updated = await api('/job-requests/available');
+      setItems(updated);
+      setSuccess('Propuesta retirada correctamente.');
+    } catch (e: any) {
+      setError(e.message || 'No se pudo retirar la propuesta.');
+    }
+  }
+
   return (
     <main className="wrap">
       <h1>Trabajos disponibles</h1>
@@ -126,7 +150,26 @@ export default function TrabajosDisponibles() {
                 : 'Sin calificaciones'}
             </p>
 
-            {proposalJobId !== job.id ? (
+            {job.proposals?.[0]?.status === 'PENDING' ? (
+              <div>
+                <p>
+                  <strong>Tu propuesta:</strong> Pendiente
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    withdrawProposal(job.id, job.proposals[0].id)
+                  }
+                >
+                  Retirar propuesta
+                </button>
+              </div>
+            ) : job.proposals?.[0]?.status === 'WITHDRAWN' ? (
+              <p>
+                <strong>Tu propuesta:</strong> Retirada
+              </p>
+            ) : proposalJobId !== job.id ? (
               <button
                 type="button"
                 onClick={() => {
