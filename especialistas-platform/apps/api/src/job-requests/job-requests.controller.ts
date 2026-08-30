@@ -364,6 +364,17 @@ export class JobRequestsController {
       include: {
         category: true,
         specialistReview: true,
+        client: {
+          select: {
+            user: {
+              select: {
+                name: true,
+                email: true,
+                phone: true
+              }
+            }
+          }
+        },
         proposals: {
           where: {
             specialistId: specialist.id,
@@ -522,7 +533,9 @@ export class JobRequestsController {
                 user: {
                   select: {
                     id: true,
-                    name: true
+                    name: true,
+                    email: true,
+                    phone: true
                   }
                 }
               }

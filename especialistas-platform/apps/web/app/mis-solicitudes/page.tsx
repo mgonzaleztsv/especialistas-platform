@@ -155,6 +155,16 @@ export default function MisSolicitudes() {
                 </p>
 
                 <p>
+                  <strong>Teléfono:</strong>{' '}
+                  {job.proposals[0].specialist.user.phone || 'No disponible'}
+                </p>
+
+                <p>
+                  <strong>Correo:</strong>{' '}
+                  {job.proposals[0].specialist.user.email || 'No disponible'}
+                </p>
+
+                <p>
                   <strong>Precio acordado:</strong> $
                   {Number(job.proposals[0].amount).toFixed(2)}
                 </p>

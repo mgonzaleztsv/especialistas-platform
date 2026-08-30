@@ -137,6 +137,24 @@ export default function MisTrabajos() {
                 </p>
               )}
 
+              {job.client?.user && (
+                <div style={{ marginTop: '12px' }}>
+                  <p>
+                    <strong>Cliente:</strong> {job.client.user.name}
+                  </p>
+
+                  <p>
+                    <strong>Teléfono:</strong>{' '}
+                    {job.client.user.phone || 'No disponible'}
+                  </p>
+
+                  <p>
+                    <strong>Correo:</strong>{' '}
+                    {job.client.user.email || 'No disponible'}
+                  </p>
+                </div>
+              )}
+
               {proposal && (
                 <>
                   <p>
