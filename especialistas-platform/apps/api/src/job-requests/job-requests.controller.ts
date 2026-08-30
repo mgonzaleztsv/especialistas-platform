@@ -209,7 +209,8 @@ export class JobRequestsController {
     const proposal = await this.prisma.proposal.findFirst({
       where: {
         id: proposalId,
-        jobRequestId
+        jobRequestId,
+        status: 'PENDING'
       }
     });
 
