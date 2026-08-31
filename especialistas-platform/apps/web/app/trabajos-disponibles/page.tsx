@@ -9,6 +9,7 @@ export default function TrabajosDisponibles() {
   const [error, setError] = useState('');
 
   const [proposalJobId, setProposalJobId] = useState<string | null>(null);
+  const [editingProposalId, setEditingProposalId] = useState<string | null>(null);
   const [proposal, setProposal] = useState({
     amount: '',
     message: '',
@@ -47,6 +48,9 @@ export default function TrabajosDisponibles() {
         })
       });
 
+      const updated = await api('/job-requests/available');
+      setItems(updated);
+
       setSuccess('Propuesta enviada correctamente.');
       setProposalJobId(null);
 
@@ -60,6 +64,63 @@ export default function TrabajosDisponibles() {
     }
   }
 
+
+
+  function startEditProposal(job: any) {
+    const existing = job.proposals?.[0];
+
+    if (!existing || existing.status !== 'PENDING') return;
+
+    setEditingProposalId(existing.id);
+    setProposalJobId(job.id);
+    setProposal({
+      amount: String(existing.amount ?? ''),
+      message: existing.message || '',
+      availableDate: existing.availableDate
+        ? String(existing.availableDate).slice(0, 10)
+        : ''
+    });
+    setError('');
+    setSuccess('');
+  }
+
+  async function saveEditedProposal(jobId: string, proposalId: string) {
+    const amount = Number(proposal.amount);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError('El precio ofrecido debe ser mayor que cero.');
+      return;
+    }
+
+    setError('');
+    setSuccess('');
+
+    try {
+      await api(`/job-requests/${jobId}/proposals/${proposalId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          amount,
+          message: proposal.message || null,
+          availableDate: proposal.availableDate || null
+        })
+      });
+
+      const updated = await api('/job-requests/available');
+      setItems(updated);
+
+      setEditingProposalId(null);
+      setProposalJobId(null);
+      setProposal({
+        amount: '',
+        message: '',
+        availableDate: ''
+      });
+
+      setSuccess('Propuesta actualizada correctamente.');
+    } catch (e: any) {
+      setError(e.message || 'No se pudo actualizar la propuesta.');
+    }
+  }
 
   async function withdrawProposal(jobId: string, proposalId: string) {
     const confirmed = window.confirm(
@@ -150,11 +211,20 @@ export default function TrabajosDisponibles() {
                 : 'Sin calificaciones'}
             </p>
 
-            {job.proposals?.[0]?.status === 'PENDING' ? (
+            {job.proposals?.[0]?.status === 'PENDING' &&
+            editingProposalId !== job.proposals?.[0]?.id ? (
               <div>
                 <p>
                   <strong>Tu propuesta:</strong> Pendiente
                 </p>
+
+                <button
+                  type="button"
+                  onClick={() => startEditProposal(job)}
+                  style={{ marginRight: '8px' }}
+                >
+                  Editar propuesta
+                </button>
 
                 <button
                   type="button"
@@ -217,10 +287,14 @@ export default function TrabajosDisponibles() {
 
                 <button
                   type="button"
-                  onClick={() => sendProposal(job.id)}
+                  onClick={() =>
+                    editingProposalId
+                      ? saveEditedProposal(job.id, editingProposalId)
+                      : sendProposal(job.id)
+                  }
                   disabled={!proposal.amount}
                 >
-                  Enviar
+                  {editingProposalId ? 'Guardar cambios' : 'Enviar'}
                 </button>
 
                 <button

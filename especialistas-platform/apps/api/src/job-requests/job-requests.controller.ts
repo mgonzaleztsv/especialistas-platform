@@ -83,6 +83,67 @@ export class JobRequestsController {
     });
   }
 
+  @Patch(':jobId/proposals/:proposalId')
+  async updateProposal(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string,
+    @Param('proposalId') proposalId: string,
+    @Body() body: any
+  ) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!specialist) {
+      throw new Error('El usuario no tiene perfil de especialista');
+    }
+
+    const proposal = await this.prisma.proposal.findFirst({
+      where: {
+        id: proposalId,
+        jobRequestId,
+        specialistId: specialist.id,
+        status: 'PENDING',
+        jobRequest: {
+          status: 'PUBLISHED'
+        }
+      }
+    });
+
+    if (!proposal) {
+      throw new Error(
+        'La propuesta no existe, no te pertenece o ya no puede editarse'
+      );
+    }
+
+    const data: any = {};
+
+    if (body.amount !== undefined) {
+      const amount = Number(body.amount);
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error('El precio ofrecido debe ser mayor que cero');
+      }
+
+      data.amount = amount;
+    }
+
+    if (body.message !== undefined) {
+      data.message = body.message?.trim() || null;
+    }
+
+    if (body.availableDate !== undefined) {
+      data.availableDate = body.availableDate
+        ? new Date(body.availableDate)
+        : null;
+    }
+
+    return this.prisma.proposal.update({
+      where: { id: proposal.id },
+      data
+    });
+  }
+
   @Patch(':jobId/proposals/:proposalId/withdraw')
   async withdrawProposal(
     @Req() req: any,
@@ -167,7 +228,10 @@ export class JobRequestsController {
           },
           select: {
             id: true,
-            status: true
+            status: true,
+            amount: true,
+            message: true,
+            availableDate: true
           }
         }
       },
