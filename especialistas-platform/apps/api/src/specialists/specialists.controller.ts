@@ -73,6 +73,50 @@ export class SpecialistsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/portfolio/:itemId')
+  async updatePortfolioItem(
+    @Req() req: any,
+    @Param('itemId') itemId: string,
+    @Body() body: any
+  ) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!specialist) {
+      throw new Error('El usuario no tiene perfil de especialista');
+    }
+
+    const item = await this.prisma.portfolioItem.findFirst({
+      where: {
+        id: itemId,
+        specialistId: specialist.id
+      }
+    });
+
+    if (!item) {
+      throw new Error('El elemento del portafolio no existe o no te pertenece');
+    }
+
+    const title = String(body.title || '').trim();
+    const description = String(body.description || '').trim();
+    const imageUrl = String(body.imageUrl || '').trim();
+
+    if (!title) {
+      throw new Error('El título es obligatorio');
+    }
+
+    return this.prisma.portfolioItem.update({
+      where: { id: item.id },
+      data: {
+        title,
+        description: description || null,
+        imageUrl: imageUrl || null
+      }
+    });
+  }
+
   @Delete('me/portfolio/:itemId')
   async deletePortfolioItem(
     @Req() req: any,

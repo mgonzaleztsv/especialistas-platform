@@ -27,6 +27,12 @@ export default function PerfilEspecialista() {
     imageUrl: ''
   });
   const [portfolioMessage, setPortfolioMessage] = useState('');
+  const [editingPortfolioId, setEditingPortfolioId] = useState<string | null>(null);
+  const [portfolioEditDraft, setPortfolioEditDraft] = useState({
+    title: '',
+    description: '',
+    imageUrl: ''
+  });
 
   useEffect(() => {
     async function loadData() {
@@ -145,6 +151,51 @@ export default function PerfilEspecialista() {
       setPortfolioMessage('Trabajo agregado al portafolio correctamente.');
     } catch (e: any) {
       setError(e.message || 'No se pudo agregar el trabajo al portafolio.');
+    }
+  }
+
+  function startEditPortfolioItem(item: any) {
+    setEditingPortfolioId(item.id);
+    setPortfolioEditDraft({
+      title: item.title || '',
+      description: item.description || '',
+      imageUrl: item.imageUrl || ''
+    });
+    setError('');
+    setPortfolioMessage('');
+  }
+
+  function cancelEditPortfolioItem() {
+    setEditingPortfolioId(null);
+  }
+
+  async function savePortfolioItem(itemId: string) {
+    if (!portfolioEditDraft.title.trim()) {
+      setError('El título del trabajo es obligatorio.');
+      return;
+    }
+
+    setError('');
+    setPortfolioMessage('');
+
+    try {
+      const updated = await api(`/specialists/me/portfolio/${itemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(portfolioEditDraft)
+      });
+
+      setPortfolioItems((prev) =>
+        prev.map((item: any) =>
+          item.id === itemId ? updated : item
+        )
+      );
+
+      setEditingPortfolioId(null);
+      setPortfolioMessage(
+        'Trabajo del portafolio actualizado correctamente.'
+      );
+    } catch (e: any) {
+      setError(e.message || 'No se pudo actualizar el trabajo.');
     }
   }
 
@@ -344,27 +395,90 @@ export default function PerfilEspecialista() {
                   marginTop: '16px'
                 }}
               >
-                <h3>{item.title}</h3>
-                {item.description && <p>{item.description}</p>}
+                {editingPortfolioId === item.id ? (
+                  <div>
+                    <label>Título del trabajo</label>
+                    <input
+                      value={portfolioEditDraft.title}
+                      onChange={(e) =>
+                        setPortfolioEditDraft((prev) => ({
+                          ...prev,
+                          title: e.target.value
+                        }))
+                      }
+                    />
 
-                {item.imageUrl && (
-                  <p>
-                    <a
-                      href={item.imageUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                    <label>Descripción</label>
+                    <textarea
+                      value={portfolioEditDraft.description}
+                      onChange={(e) =>
+                        setPortfolioEditDraft((prev) => ({
+                          ...prev,
+                          description: e.target.value
+                        }))
+                      }
+                    />
+
+                    <label>URL de imagen (opcional)</label>
+                    <input
+                      value={portfolioEditDraft.imageUrl}
+                      onChange={(e) =>
+                        setPortfolioEditDraft((prev) => ({
+                          ...prev,
+                          imageUrl: e.target.value
+                        }))
+                      }
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => savePortfolioItem(item.id)}
+                      style={{ marginTop: '8px' }}
                     >
-                      Ver imagen
-                    </a>
-                  </p>
-                )}
+                      Guardar cambios
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => deletePortfolioItem(item.id)}
-                >
-                  Eliminar
-                </button>
+                    <button
+                      type="button"
+                      onClick={cancelEditPortfolioItem}
+                      style={{ marginTop: '8px' }}
+                    >
+                      Cancelar edición
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <h3>{item.title}</h3>
+                    {item.description && <p>{item.description}</p>}
+
+                    {item.imageUrl && (
+                      <p>
+                        <a
+                          href={item.imageUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Ver imagen
+                        </a>
+                      </p>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => startEditPortfolioItem(item)}
+                    >
+                      Editar
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => deletePortfolioItem(item.id)}
+                      style={{ marginTop: '8px' }}
+                    >
+                      Eliminar
+                    </button>
+                  </>
+                )}
               </div>
             ))
           )}
