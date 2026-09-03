@@ -58,6 +58,26 @@ export default function MisSolicitudes() {
     }
   }
 
+  async function rejectProposal(jobId: string, proposalId: string) {
+    const confirmed = window.confirm(
+      '¿Seguro que quieres rechazar esta propuesta?'
+    );
+
+    if (!confirmed) return;
+
+    setError('');
+
+    try {
+      await api(`/job-requests/${jobId}/proposals/${proposalId}/reject`, {
+        method: 'PATCH'
+      });
+
+      await loadProposals(jobId);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo rechazar la propuesta.');
+    }
+  }
+
   async function acceptProposal(jobId: string, proposalId: string) {
     setError('');
 
@@ -507,14 +527,26 @@ export default function MisSolicitudes() {
                     </p>
 
                     {proposal.status === 'PENDING' && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          acceptProposal(job.id, proposal.id)
-                        }
-                      >
-                        Aceptar propuesta
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            acceptProposal(job.id, proposal.id)
+                          }
+                        >
+                          Aceptar propuesta
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            rejectProposal(job.id, proposal.id)
+                          }
+                          style={{ marginTop: '8px' }}
+                        >
+                          Rechazar propuesta
+                        </button>
+                      </>
                     )}
                   </div>
                 ))}

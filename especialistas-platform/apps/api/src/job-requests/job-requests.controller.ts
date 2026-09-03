@@ -246,6 +246,44 @@ export class JobRequestsController {
     });
   }
 
+  @Patch(':jobId/proposals/:proposalId/reject')
+  async rejectProposal(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string,
+    @Param('proposalId') proposalId: string
+  ) {
+    const client = await this.prisma.client.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!client) {
+      throw new Error('El usuario no tiene perfil de cliente');
+    }
+
+    const proposal = await this.prisma.proposal.findFirst({
+      where: {
+        id: proposalId,
+        jobRequestId,
+        status: 'PENDING',
+        jobRequest: {
+          clientId: client.id,
+          status: 'PUBLISHED'
+        }
+      }
+    });
+
+    if (!proposal) {
+      throw new Error(
+        'La propuesta no existe, no te pertenece o ya no puede rechazarse'
+      );
+    }
+
+    return this.prisma.proposal.update({
+      where: { id: proposal.id },
+      data: { status: 'REJECTED' }
+    });
+  }
+
   @Post(':jobId/proposals/:proposalId/accept')
   async acceptProposal(
     @Req() req: any,
