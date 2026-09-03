@@ -249,6 +249,10 @@ export default function TrabajosDisponibles() {
                   Editar y reenviar propuesta
                 </button>
               </div>
+            ) : job.proposals?.[0]?.status === 'REJECTED' ? (
+              <p>
+                <strong>Tu propuesta:</strong> Rechazada por el cliente
+              </p>
             ) : proposalJobId !== job.id ? (
               <button
                 type="button"
