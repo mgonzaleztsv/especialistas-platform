@@ -69,7 +69,7 @@ export default function TrabajosDisponibles() {
   function startEditProposal(job: any) {
     const existing = job.proposals?.[0];
 
-    if (!existing || existing.status !== 'PENDING') return;
+    if (!existing || !['PENDING', 'WITHDRAWN'].includes(existing.status)) return;
 
     setEditingProposalId(existing.id);
     setProposalJobId(job.id);
@@ -235,10 +235,20 @@ export default function TrabajosDisponibles() {
                   Retirar propuesta
                 </button>
               </div>
-            ) : job.proposals?.[0]?.status === 'WITHDRAWN' ? (
-              <p>
-                <strong>Tu propuesta:</strong> Retirada
-              </p>
+            ) : job.proposals?.[0]?.status === 'WITHDRAWN' &&
+            editingProposalId !== job.proposals?.[0]?.id ? (
+              <div>
+                <p>
+                  <strong>Tu propuesta:</strong> Retirada
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => startEditProposal(job)}
+                >
+                  Editar y reenviar propuesta
+                </button>
+              </div>
             ) : proposalJobId !== job.id ? (
               <button
                 type="button"
@@ -252,7 +262,13 @@ export default function TrabajosDisponibles() {
               </button>
             ) : (
               <div style={{ marginTop: '16px' }}>
-                <h4>Enviar propuesta</h4>
+                <h4>
+                {editingProposalId
+                  ? job.proposals?.[0]?.status === 'WITHDRAWN'
+                    ? 'Editar y reenviar propuesta'
+                    : 'Editar propuesta'
+                  : 'Enviar propuesta'}
+              </h4>
 
                 <label>Precio ofrecido (USD)</label>
                 <input
@@ -294,7 +310,11 @@ export default function TrabajosDisponibles() {
                   }
                   disabled={!proposal.amount}
                 >
-                  {editingProposalId ? 'Guardar cambios' : 'Enviar'}
+                  {editingProposalId
+                ? job.proposals?.[0]?.status === 'WITHDRAWN'
+                  ? 'Reenviar propuesta'
+                  : 'Guardar cambios'
+                : 'Enviar'}
                 </button>
 
                 <button

@@ -103,7 +103,9 @@ export class JobRequestsController {
         id: proposalId,
         jobRequestId,
         specialistId: specialist.id,
-        status: 'PENDING',
+        status: {
+          in: ['PENDING', 'WITHDRAWN']
+        },
         jobRequest: {
           status: 'PUBLISHED'
         }
@@ -140,7 +142,10 @@ export class JobRequestsController {
 
     return this.prisma.proposal.update({
       where: { id: proposal.id },
-      data
+      data: {
+        ...data,
+        status: 'PENDING'
+      }
     });
   }
 
