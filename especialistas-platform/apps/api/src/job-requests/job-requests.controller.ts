@@ -617,6 +617,112 @@ export class JobRequestsController {
     });
   }
 
+  @Patch(':id')
+  async updateJobRequest(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Body() body: any
+  ) {
+    const client = await this.prisma.client.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!client) {
+      throw new Error('El usuario no tiene perfil de cliente');
+    }
+
+    const jobRequest = await this.prisma.jobRequest.findFirst({
+      where: {
+        id: jobRequestId,
+        clientId: client.id,
+        status: {
+          in: ['DRAFT', 'PUBLISHED', 'RECEIVING_QUOTES']
+        }
+      }
+    });
+
+    if (!jobRequest) {
+      throw new Error(
+        'La solicitud no existe, no te pertenece o ya no puede editarse'
+      );
+    }
+
+    const data: any = {};
+
+    if (body.title !== undefined) {
+      const title = String(body.title).trim();
+
+      if (!title) {
+        throw new Error('El título no puede estar vacío');
+      }
+
+      data.title = title;
+    }
+
+    if (body.description !== undefined) {
+      const description = String(body.description).trim();
+
+      if (!description) {
+        throw new Error('La descripción no puede estar vacía');
+      }
+
+      data.description = description;
+    }
+
+    if (body.budgetMin !== undefined) {
+      data.budgetMin =
+        body.budgetMin === null || body.budgetMin === ''
+          ? null
+          : Number(body.budgetMin);
+    }
+
+    if (body.budgetMax !== undefined) {
+      data.budgetMax =
+        body.budgetMax === null || body.budgetMax === ''
+          ? null
+          : Number(body.budgetMax);
+    }
+
+    if (
+      data.budgetMin !== undefined &&
+      data.budgetMin !== null &&
+      (!Number.isFinite(data.budgetMin) || data.budgetMin < 0)
+    ) {
+      throw new Error('El presupuesto mínimo no es válido');
+    }
+
+    if (
+      data.budgetMax !== undefined &&
+      data.budgetMax !== null &&
+      (!Number.isFinite(data.budgetMax) || data.budgetMax < 0)
+    ) {
+      throw new Error('El presupuesto máximo no es válido');
+    }
+
+    if (body.city !== undefined) {
+      data.city = String(body.city).trim();
+    }
+
+    if (body.state !== undefined) {
+      data.state = String(body.state).trim();
+    }
+
+    if (body.zipcode !== undefined) {
+      data.zipcode = String(body.zipcode).trim();
+    }
+
+    if (body.desiredDate !== undefined) {
+      data.desiredDate = body.desiredDate
+        ? new Date(body.desiredDate)
+        : null;
+    }
+
+    return this.prisma.jobRequest.update({
+      where: { id: jobRequest.id },
+      data
+    });
+  }
+
   @Patch(':id/cancel')
   async cancelJobRequest(
     @Req() req: any,

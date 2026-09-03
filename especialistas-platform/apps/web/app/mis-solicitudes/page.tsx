@@ -11,6 +11,17 @@ export default function MisSolicitudes() {
   const [loadingProposals, setLoadingProposals] = useState<string | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rating: string; comment: string }>>({});
   const [submittingReview, setSubmittingReview] = useState<string | null>(null);
+  const [editingJobId, setEditingJobId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({
+    title: '',
+    description: '',
+    budgetMin: '',
+    budgetMax: '',
+    city: '',
+    state: '',
+    zipcode: '',
+    desiredDate: ''
+  });
 
   useEffect(() => {
     api('/job-requests/me')
@@ -106,6 +117,58 @@ export default function MisSolicitudes() {
   }
 
 
+  function startEditJob(job: any) {
+    setEditingJobId(job.id);
+    setEditDraft({
+      title: job.title || '',
+      description: job.description || '',
+      budgetMin: job.budgetMin != null ? String(job.budgetMin) : '',
+      budgetMax: job.budgetMax != null ? String(job.budgetMax) : '',
+      city: job.city || '',
+      state: job.state || '',
+      zipcode: job.zipcode || '',
+      desiredDate: job.desiredDate
+        ? String(job.desiredDate).slice(0, 10)
+        : ''
+    });
+    setError('');
+  }
+
+  function cancelEditJob() {
+    setEditingJobId(null);
+  }
+
+  async function saveEditJob(jobId: string) {
+    if (!editDraft.title.trim() || !editDraft.description.trim()) {
+      setError('El título y la descripción son obligatorios.');
+      return;
+    }
+
+    setError('');
+
+    try {
+      await api(`/job-requests/${jobId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          title: editDraft.title,
+          description: editDraft.description,
+          budgetMin: editDraft.budgetMin,
+          budgetMax: editDraft.budgetMax,
+          city: editDraft.city,
+          state: editDraft.state,
+          zipcode: editDraft.zipcode,
+          desiredDate: editDraft.desiredDate || null
+        })
+      });
+
+      const updated = await api('/job-requests/me');
+      setItems(updated);
+      setEditingJobId(null);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo actualizar la solicitud.');
+    }
+  }
+
   async function cancelJob(jobId: string) {
     const confirmed = window.confirm(
       '¿Seguro que quieres cancelar esta solicitud?'
@@ -198,7 +261,9 @@ export default function MisSolicitudes() {
             {job.desiredDate && (
               <p>
                 <strong>Fecha deseada:</strong>{' '}
-                {new Date(job.desiredDate).toLocaleDateString()}
+                {new Date(
+                    `${String(job.desiredDate).slice(0, 10)}T12:00:00`
+                  ).toLocaleDateString()}
               </p>
             )}
 
@@ -277,6 +342,98 @@ export default function MisSolicitudes() {
             )}
 
             {['DRAFT', 'PUBLISHED', 'RECEIVING_QUOTES'].includes(job.status) && (
+              <>
+              {editingJobId === job.id ? (
+                <div style={{ marginBottom: '12px' }}>
+                  <h4>Editar solicitud</h4>
+
+                  <label>Título</label>
+                  <input
+                    value={editDraft.title}
+                    onChange={(e) =>
+                      setEditDraft((prev) => ({ ...prev, title: e.target.value }))
+                    }
+                  />
+
+                  <label>Descripción</label>
+                  <textarea
+                    value={editDraft.description}
+                    onChange={(e) =>
+                      setEditDraft((prev) => ({ ...prev, description: e.target.value }))
+                    }
+                  />
+
+                  <label>Presupuesto mínimo</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editDraft.budgetMin}
+                    onChange={(e) =>
+                      setEditDraft((prev) => ({ ...prev, budgetMin: e.target.value }))
+                    }
+                  />
+
+                  <label>Presupuesto máximo</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editDraft.budgetMax}
+                    onChange={(e) =>
+                      setEditDraft((prev) => ({ ...prev, budgetMax: e.target.value }))
+                    }
+                  />
+
+                  <label>Ciudad</label>
+                  <input
+                    value={editDraft.city}
+                    onChange={(e) =>
+                      setEditDraft((prev) => ({ ...prev, city: e.target.value }))
+                    }
+                  />
+
+                  <label>Estado</label>
+                  <input
+                    value={editDraft.state}
+                    onChange={(e) =>
+                      setEditDraft((prev) => ({ ...prev, state: e.target.value }))
+                    }
+                  />
+
+                  <label>Código postal</label>
+                  <input
+                    value={editDraft.zipcode}
+                    onChange={(e) =>
+                      setEditDraft((prev) => ({ ...prev, zipcode: e.target.value }))
+                    }
+                  />
+
+                  <label>Fecha deseada</label>
+                  <input
+                    type="date"
+                    value={editDraft.desiredDate}
+                    onChange={(e) =>
+                      setEditDraft((prev) => ({ ...prev, desiredDate: e.target.value }))
+                    }
+                  />
+
+                  <button type="button" onClick={() => saveEditJob(job.id)}>
+                    Guardar cambios
+                  </button>
+
+                  <button type="button" onClick={cancelEditJob} style={{ marginTop: '8px' }}>
+                    Cancelar edición
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => startEditJob(job)}
+                  style={{ marginBottom: '8px' }}
+                >
+                  Editar solicitud
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => cancelJob(job.id)}
@@ -284,6 +441,7 @@ export default function MisSolicitudes() {
               >
                 Cancelar solicitud
               </button>
+              </>
             )}
 
             <button
