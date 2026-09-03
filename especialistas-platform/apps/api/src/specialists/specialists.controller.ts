@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -37,6 +37,68 @@ export class SpecialistsController {
         documents: true,
         portfolioItems: true
       }
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/portfolio')
+  async addPortfolioItem(
+    @Req() req: any,
+    @Body() body: any
+  ) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!specialist) {
+      throw new Error('El usuario no tiene perfil de especialista');
+    }
+
+    const title = String(body.title || '').trim();
+    const description = String(body.description || '').trim();
+    const imageUrl = String(body.imageUrl || '').trim();
+
+    if (!title) {
+      throw new Error('El título es obligatorio');
+    }
+
+    return this.prisma.portfolioItem.create({
+      data: {
+        specialistId: specialist.id,
+        title,
+        description: description || null,
+        imageUrl: imageUrl || null
+      }
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('me/portfolio/:itemId')
+  async deletePortfolioItem(
+    @Req() req: any,
+    @Param('itemId') itemId: string
+  ) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!specialist) {
+      throw new Error('El usuario no tiene perfil de especialista');
+    }
+
+    const item = await this.prisma.portfolioItem.findFirst({
+      where: {
+        id: itemId,
+        specialistId: specialist.id
+      }
+    });
+
+    if (!item) {
+      throw new Error('El elemento del portafolio no existe o no te pertenece');
+    }
+
+    return this.prisma.portfolioItem.delete({
+      where: { id: item.id }
     });
   }
 
