@@ -808,6 +808,147 @@ export class JobRequestsController {
     });
   }
 
+  @Get(':id/messages')
+  async getJobMessages(
+    @Req() req: any,
+    @Param('id') jobRequestId: string
+  ) {
+    const job = await this.prisma.jobRequest.findFirst({
+      where: {
+        id: jobRequestId,
+        proposals: {
+          some: { status: 'ACCEPTED' }
+        }
+      },
+      include: {
+        client: {
+          select: { userId: true }
+        },
+        proposals: {
+          where: { status: 'ACCEPTED' },
+          take: 1,
+          include: {
+            specialist: {
+              select: { userId: true }
+            }
+          }
+        }
+      }
+    });
+
+    if (!job) {
+      throw new Error('El trabajo no existe o aún no tiene especialista contratado');
+    }
+
+    const specialistUserId = job.proposals[0]?.specialist?.userId;
+
+    const isParticipant =
+      req.user.userId === job.client.userId ||
+      req.user.userId === specialistUserId;
+
+    if (!isParticipant) {
+      throw new Error('No tienes acceso a esta conversación');
+    }
+
+    await this.prisma.message.updateMany({
+      where: {
+        jobRequestId,
+        senderId: { not: req.user.userId },
+        readAt: null
+      },
+      data: {
+        readAt: new Date()
+      }
+    });
+
+    return this.prisma.message.findMany({
+      where: { jobRequestId },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            role: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'asc'
+      }
+    });
+  }
+
+  @Post(':id/messages')
+  async sendJobMessage(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Body() body: any
+  ) {
+    const messageBody = String(body.body || '').trim();
+
+    if (!messageBody) {
+      throw new Error('El mensaje no puede estar vacío');
+    }
+
+    if (messageBody.length > 2000) {
+      throw new Error('El mensaje no puede exceder 2000 caracteres');
+    }
+
+    const job = await this.prisma.jobRequest.findFirst({
+      where: {
+        id: jobRequestId,
+        proposals: {
+          some: { status: 'ACCEPTED' }
+        }
+      },
+      include: {
+        client: {
+          select: { userId: true }
+        },
+        proposals: {
+          where: { status: 'ACCEPTED' },
+          take: 1,
+          include: {
+            specialist: {
+              select: { userId: true }
+            }
+          }
+        }
+      }
+    });
+
+    if (!job) {
+      throw new Error('El trabajo no existe o aún no tiene especialista contratado');
+    }
+
+    const specialistUserId = job.proposals[0]?.specialist?.userId;
+
+    const isParticipant =
+      req.user.userId === job.client.userId ||
+      req.user.userId === specialistUserId;
+
+    if (!isParticipant) {
+      throw new Error('No tienes acceso a esta conversación');
+    }
+
+    return this.prisma.message.create({
+      data: {
+        jobRequestId,
+        senderId: req.user.userId,
+        body: messageBody
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            role: true
+          }
+        }
+      }
+    });
+  }
+
   @Get('me')
   async myRequests(@Req() req: any) {
     const client = await this.prisma.client.findUnique({

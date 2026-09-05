@@ -38,6 +38,7 @@ model User {
   client       Client?
   specialist   Specialist?
   locations    Location[]
+  sentMessages Message[]
 }
 
 model Client {
@@ -154,6 +155,22 @@ model JobRequest {
   proposals   Proposal[]
   review      Review?
   specialistReview SpecialistReview?
+  messages         Message[]
+}
+
+model Message {
+  id           String     @id @default(uuid())
+  jobRequestId String
+  senderId     String
+  body         String
+  readAt       DateTime?
+  createdAt    DateTime   @default(now())
+
+  jobRequest   JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  sender       User       @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([jobRequestId, createdAt])
+  @@index([senderId])
 }
 
 enum ProposalStatus {

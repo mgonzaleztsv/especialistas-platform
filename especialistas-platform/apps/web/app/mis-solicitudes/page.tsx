@@ -12,6 +12,11 @@ export default function MisSolicitudes() {
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rating: string; comment: string }>>({});
   const [submittingReview, setSubmittingReview] = useState<string | null>(null);
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
+  const [openChatJobId, setOpenChatJobId] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<Record<string, any[]>>({});
+  const [chatDrafts, setChatDrafts] = useState<Record<string, string>>({});
+  const [loadingChat, setLoadingChat] = useState<string | null>(null);
+  const [sendingChat, setSendingChat] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({
     title: '',
     description: '',
@@ -105,6 +110,60 @@ export default function MisSolicitudes() {
     }
   }
 
+
+  async function toggleChat(jobId: string) {
+    if (openChatJobId === jobId) {
+      setOpenChatJobId(null);
+      return;
+    }
+
+    setOpenChatJobId(jobId);
+    setError('');
+    setLoadingChat(jobId);
+
+    try {
+      const data = await api(`/job-requests/${jobId}/messages`);
+
+      setChatMessages((prev) => ({
+        ...prev,
+        [jobId]: data
+      }));
+    } catch (e: any) {
+      setError(e.message || 'No se pudo cargar la conversación.');
+    } finally {
+      setLoadingChat(null);
+    }
+  }
+
+  async function sendChatMessage(jobId: string) {
+    const body = (chatDrafts[jobId] || '').trim();
+
+    if (!body) return;
+
+    setError('');
+    setSendingChat(jobId);
+
+    try {
+      const message = await api(`/job-requests/${jobId}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ body })
+      });
+
+      setChatMessages((prev) => ({
+        ...prev,
+        [jobId]: [...(prev[jobId] || []), message]
+      }));
+
+      setChatDrafts((prev) => ({
+        ...prev,
+        [jobId]: ''
+      }));
+    } catch (e: any) {
+      setError(e.message || 'No se pudo enviar el mensaje.');
+    } finally {
+      setSendingChat(null);
+    }
+  }
 
   async function submitReview(jobId: string) {
     const draft = reviewDrafts[jobId] || { rating: '', comment: '' };
@@ -276,6 +335,90 @@ export default function MisSolicitudes() {
                   {Number(job.proposals[0].amount).toFixed(2)}
                 </p>
               </>
+            )}
+
+            {job.proposals?.[0]?.specialist?.user?.name && (
+              <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                <button
+                  type="button"
+                  onClick={() => toggleChat(job.id)}
+                >
+                  {openChatJobId === job.id
+                    ? 'Cerrar conversación'
+                    : 'Abrir conversación'}
+                </button>
+
+                {openChatJobId === job.id && (
+                  <div style={{ marginTop: '12px' }}>
+                    {loadingChat === job.id ? (
+                      <p>Cargando conversación...</p>
+                    ) : (
+                      <>
+                        <div
+                          style={{
+                            border: '1px solid #ddd',
+                            borderRadius: '8px',
+                            padding: '12px',
+                            marginBottom: '12px'
+                          }}
+                        >
+                          {(chatMessages[job.id] || []).length === 0 ? (
+                            <p>Aún no hay mensajes.</p>
+                          ) : (
+                            (chatMessages[job.id] || []).map(
+                              (message: any) => (
+                                <div
+                                  key={message.id}
+                                  style={{ marginBottom: '12px' }}
+                                >
+                                  <strong>
+                                    {message.sender?.name || 'Usuario'}:
+                                  </strong>{' '}
+                                  {message.body}
+
+                                  <div>
+                                    <small>
+                                      {new Date(
+                                        message.createdAt
+                                      ).toLocaleString()}
+                                    </small>
+                                  </div>
+                                </div>
+                              )
+                            )
+                          )}
+                        </div>
+
+                        <textarea
+                          value={chatDrafts[job.id] || ''}
+                          onChange={(e) =>
+                            setChatDrafts((prev) => ({
+                              ...prev,
+                              [job.id]: e.target.value
+                            }))
+                          }
+                          placeholder="Escribe un mensaje..."
+                          maxLength={2000}
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => sendChatMessage(job.id)}
+                          disabled={
+                            sendingChat === job.id ||
+                            !(chatDrafts[job.id] || '').trim()
+                          }
+                          style={{ marginTop: '8px' }}
+                        >
+                          {sendingChat === job.id
+                            ? 'Enviando...'
+                            : 'Enviar mensaje'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
 
             {job.desiredDate && (
