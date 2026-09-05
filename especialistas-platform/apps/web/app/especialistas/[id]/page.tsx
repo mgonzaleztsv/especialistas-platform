@@ -139,6 +139,21 @@ export default function SpecialistProfile() {
             <div key={item.id}>
               <strong>{item.title}</strong>
               {item.description && <p>{item.description}</p>}
+
+              {item.imageUrl && (
+                <img
+                  src={item.imageUrl}
+                  alt={item.title}
+                  loading="lazy"
+                  style={{
+                    width: '100%',
+                    maxWidth: '520px',
+                    height: 'auto',
+                    borderRadius: '8px',
+                    marginTop: '8px'
+                  }}
+                />
+              )}
             </div>
           ))
         ) : (
