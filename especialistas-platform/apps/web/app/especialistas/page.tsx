@@ -137,6 +137,12 @@ export default function Specialists() {
                   : s.availabilityStatus}
               </p>
 
+              {s.verificationStatus === 'VERIFIED' && (
+                <p>
+                  <strong>✓ Verificado</strong>
+                </p>
+              )}
+
               <p>
                 <strong>Confianza:</strong> {s.trustScore}%
               </p>

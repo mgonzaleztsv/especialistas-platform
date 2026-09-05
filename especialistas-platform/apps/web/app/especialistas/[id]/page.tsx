@@ -82,9 +82,15 @@ export default function SpecialistProfile() {
             : specialist.availabilityStatus}
         </p>
 
-        <p>
+        <div>
+          {specialist.verificationStatus === 'VERIFIED' && (
+            <p>
+              <strong>✓ Especialista verificado</strong>
+            </p>
+          )}
+
           <strong>Confianza:</strong> {specialist.trustScore}%
-        </p>
+        </div>
 
         <h2>Especialidades</h2>
 
