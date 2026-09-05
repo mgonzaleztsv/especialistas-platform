@@ -20,6 +20,15 @@ export default function PerfilEspecialista() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [verificationStatus, setVerificationStatus] = useState('PENDING');
+  const [verificationDocuments, setVerificationDocuments] = useState<any[]>([]);
+  const [verificationDraft, setVerificationDraft] = useState({
+    documentType: '',
+    fileUrl: '',
+    expirationDate: ''
+  });
+  const [verificationMessage, setVerificationMessage] = useState('');
+
   const [portfolioItems, setPortfolioItems] = useState<any[]>([]);
   const [portfolioDraft, setPortfolioDraft] = useState({
     title: '',
@@ -66,6 +75,8 @@ export default function PerfilEspecialista() {
           );
 
         setPortfolioItems(profile.portfolioItems || []);
+        setVerificationStatus(profile.verificationStatus || 'PENDING');
+        setVerificationDocuments(profile.documents || []);
         }
       } catch (e: any) {
         setError(e.message || 'No se pudo cargar el perfil.');
@@ -122,6 +133,45 @@ export default function PerfilEspecialista() {
       setMessage('Perfil guardado correctamente.');
     } catch (e: any) {
       setError(e.message || 'No se pudo guardar el perfil.');
+    }
+  }
+
+  async function addVerificationDocument(e: React.FormEvent) {
+    e.preventDefault();
+
+    if (!verificationDraft.documentType.trim()) {
+      setError('El tipo de documento es obligatorio.');
+      return;
+    }
+
+    if (!verificationDraft.fileUrl.trim()) {
+      setError('La URL del documento es obligatoria.');
+      return;
+    }
+
+    setError('');
+    setVerificationMessage('');
+
+    try {
+      const document = await api('/specialists/me/documents', {
+        method: 'POST',
+        body: JSON.stringify({
+          documentType: verificationDraft.documentType,
+          fileUrl: verificationDraft.fileUrl,
+          expirationDate: verificationDraft.expirationDate || null
+        })
+      });
+
+      setVerificationDocuments((prev) => [document, ...prev]);
+      setVerificationStatus('UNDER_REVIEW');
+      setVerificationDraft({
+        documentType: '',
+        fileUrl: '',
+        expirationDate: ''
+      });
+      setVerificationMessage('Documento enviado para revisión correctamente.');
+    } catch (e: any) {
+      setError(e.message || 'No se pudo enviar el documento.');
     }
   }
 
@@ -327,6 +377,113 @@ export default function PerfilEspecialista() {
             <p style={{ color: 'red' }}>{error}</p>
           )}
         </form>
+
+      <div className="card" style={{ marginTop: '24px' }}>
+        <h2>Verificación del especialista</h2>
+
+        <p>
+          <strong>Estado:</strong>{' '}
+          {verificationStatus === 'PENDING'
+            ? 'Pendiente'
+            : verificationStatus === 'UNDER_REVIEW'
+              ? 'En revisión'
+              : verificationStatus === 'VERIFIED'
+                ? 'Verificado'
+                : verificationStatus === 'REJECTED'
+                  ? 'Rechazado'
+                  : verificationStatus}
+        </p>
+
+        <form onSubmit={addVerificationDocument}>
+          <label>Tipo de documento</label>
+          <input
+            value={verificationDraft.documentType}
+            onChange={(e) =>
+              setVerificationDraft((prev) => ({
+                ...prev,
+                documentType: e.target.value
+              }))
+            }
+            placeholder="Ejemplo: Licencia profesional"
+          />
+
+          <label>URL del documento</label>
+          <input
+            value={verificationDraft.fileUrl}
+            onChange={(e) =>
+              setVerificationDraft((prev) => ({
+                ...prev,
+                fileUrl: e.target.value
+              }))
+            }
+            placeholder="https://..."
+          />
+
+          <label>Fecha de vencimiento (opcional)</label>
+          <input
+            type="date"
+            value={verificationDraft.expirationDate}
+            onChange={(e) =>
+              setVerificationDraft((prev) => ({
+                ...prev,
+                expirationDate: e.target.value
+              }))
+            }
+          />
+
+          <button type="submit" style={{ marginTop: '8px' }}>
+            Enviar documento a revisión
+          </button>
+        </form>
+
+        {verificationMessage && (
+          <p style={{ color: 'green' }}>{verificationMessage}</p>
+        )}
+
+        <div style={{ marginTop: '24px' }}>
+          <h3>Documentos enviados</h3>
+
+          {verificationDocuments.length === 0 ? (
+            <p>Aún no has enviado documentos.</p>
+          ) : (
+            verificationDocuments.map((document: any) => (
+              <div
+                key={document.id}
+                style={{
+                  borderTop: '1px solid #ddd',
+                  paddingTop: '12px',
+                  marginTop: '12px'
+                }}
+              >
+                <p>
+                  <strong>Tipo:</strong> {document.documentType}
+                </p>
+                <p>
+                  <strong>Estado:</strong>{' '}
+                  {document.status === 'PENDING'
+                    ? 'Pendiente'
+                    : document.status === 'UNDER_REVIEW'
+                      ? 'En revisión'
+                      : document.status === 'VERIFIED'
+                        ? 'Verificado'
+                        : document.status === 'REJECTED'
+                          ? 'Rechazado'
+                          : document.status}
+                </p>
+                <p>
+                  <a
+                    href={document.fileUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Ver documento
+                  </a>
+                </p>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
 
       <div className="card" style={{ marginTop: '24px' }}>
         <h2>Mi portafolio</h2>

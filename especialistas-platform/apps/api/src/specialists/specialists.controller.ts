@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('specialists')
@@ -143,6 +144,170 @@ export class SpecialistsController {
 
     return this.prisma.portfolioItem.delete({
       where: { id: item.id }
+    });
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/documents')
+  async addVerificationDocument(
+    @Req() req: any,
+    @Body() body: any
+  ) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!specialist) {
+      throw new Error('El usuario no tiene perfil de especialista');
+    }
+
+    const documentType = String(body.documentType || '').trim();
+    const fileUrl = String(body.fileUrl || '').trim();
+
+    if (!documentType) {
+      throw new Error('El tipo de documento es obligatorio');
+    }
+
+    if (!fileUrl) {
+      throw new Error('La URL del documento es obligatoria');
+    }
+
+    const document = await this.prisma.document.create({
+      data: {
+        specialistId: specialist.id,
+        documentType,
+        fileUrl,
+        expirationDate: body.expirationDate
+          ? new Date(body.expirationDate)
+          : null,
+        status: 'PENDING'
+      }
+    });
+
+    await this.prisma.specialist.update({
+      where: { id: specialist.id },
+      data: { verificationStatus: 'UNDER_REVIEW' }
+    });
+
+    return document;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/documents')
+  async getMyVerificationDocuments(@Req() req: any) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!specialist) {
+      throw new Error('El usuario no tiene perfil de especialista');
+    }
+
+    return this.prisma.document.findMany({
+      where: { specialistId: specialist.id },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Get('admin/documents/pending')
+  async getPendingVerificationDocuments() {
+    return this.prisma.document.findMany({
+      where: { status: 'PENDING' },
+      include: {
+        specialist: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+  }
+
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Patch('admin/documents/:documentId/verify')
+  async verifyDocument(
+    @Param('documentId') documentId: string
+  ) {
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId }
+    });
+
+    if (!document) {
+      throw new Error('El documento no existe');
+    }
+
+    await this.prisma.document.update({
+      where: { id: document.id },
+      data: { status: 'VERIFIED' }
+    });
+
+    const documents = await this.prisma.document.findMany({
+      where: { specialistId: document.specialistId }
+    });
+
+    const verificationStatus = documents.some(
+      (item) => item.status === 'PENDING'
+    )
+      ? 'UNDER_REVIEW'
+      : documents.every((item) => item.status === 'VERIFIED')
+        ? 'VERIFIED'
+        : 'REJECTED';
+
+    await this.prisma.specialist.update({
+      where: { id: document.specialistId },
+      data: { verificationStatus }
+    });
+
+    return this.prisma.document.findUnique({
+      where: { id: document.id }
+    });
+  }
+
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  @Patch('admin/documents/:documentId/reject')
+  async rejectDocument(
+    @Param('documentId') documentId: string
+  ) {
+    const document = await this.prisma.document.findUnique({
+      where: { id: documentId }
+    });
+
+    if (!document) {
+      throw new Error('El documento no existe');
+    }
+
+    await this.prisma.document.update({
+      where: { id: document.id },
+      data: { status: 'REJECTED' }
+    });
+
+    const documents = await this.prisma.document.findMany({
+      where: { specialistId: document.specialistId }
+    });
+
+    const verificationStatus = documents.some(
+      (item) => item.status === 'PENDING'
+    )
+      ? 'UNDER_REVIEW'
+      : documents.every((item) => item.status === 'VERIFIED')
+        ? 'VERIFIED'
+        : 'REJECTED';
+
+    await this.prisma.specialist.update({
+      where: { id: document.specialistId },
+      data: { verificationStatus }
+    });
+
+    return this.prisma.document.findUnique({
+      where: { id: document.id }
     });
   }
 

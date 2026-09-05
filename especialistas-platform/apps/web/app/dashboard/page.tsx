@@ -86,6 +86,16 @@ export default function Dashboard() {
               <a href="/especialistas">Ver directorio público</a>
             </p>
           </>
+        ) : u.role === 'ADMIN' ? (
+          <>
+            <p>Panel de administración</p>
+
+            <p>
+              <a href="/admin/verificaciones">
+                Revisar verificaciones
+              </a>
+            </p>
+          </>
         ) : (
           <>
             <p>Tu perfil de cliente está listo.</p>
