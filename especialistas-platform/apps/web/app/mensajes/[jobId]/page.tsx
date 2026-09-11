@@ -173,6 +173,14 @@ export default function ConversacionPage() {
                     <small>
                       {new Date(message.createdAt).toLocaleString()}
                     </small>
+
+                    {message.sender?.id === currentUserId && (
+                      <div>
+                        <small>
+                          {message.readAt ? '✓ Leído' : 'Enviado'}
+                        </small>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
