@@ -146,6 +146,15 @@ export default function ConversacionPage() {
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+
+                if (!sending && draft.trim()) {
+                  sendMessage();
+                }
+              }
+            }}
             placeholder="Escribe un mensaje..."
             maxLength={2000}
             style={{ width: '100%', minHeight: '100px' }}
