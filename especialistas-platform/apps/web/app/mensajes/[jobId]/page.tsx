@@ -166,7 +166,13 @@ export default function ConversacionPage() {
                       </strong>
                     </p>
 
-                    <p style={{ margin: '6px 0' }}>
+                    <p
+                      style={{
+                        margin: '6px 0',
+                        whiteSpace: 'pre-wrap',
+                        overflowWrap: 'anywhere'
+                      }}
+                    >
                       {message.body}
                     </p>
 
