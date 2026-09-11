@@ -15,7 +15,7 @@ export default function ConversacionPage() {
   const [error, setError] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [conversationInfo, setConversationInfo] = useState<any>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null);
 
   async function loadMessages(showLoading = false) {
     if (showLoading) setLoading(true);
@@ -65,9 +65,14 @@ export default function ConversacionPage() {
   }, [jobId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior: 'smooth'
-    });
+    const container = messagesContainerRef.current;
+
+    if (container) {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
   }, [messages]);
 
   async function sendMessage() {
@@ -117,7 +122,15 @@ export default function ConversacionPage() {
         <p>Cargando conversación...</p>
       ) : (
         <>
-          <div className="card" style={{ marginBottom: '16px' }}>
+          <div
+            ref={messagesContainerRef}
+            className="card"
+            style={{
+              marginBottom: '16px',
+              maxHeight: '55vh',
+              overflowY: 'auto'
+            }}
+          >
             {messages.length === 0 ? (
               <p>Aún no hay mensajes.</p>
             ) : (
@@ -164,8 +177,6 @@ export default function ConversacionPage() {
                 </div>
               ))
             )}
-
-            <div ref={messagesEndRef} />
           </div>
 
           <textarea
