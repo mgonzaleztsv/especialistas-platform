@@ -34,9 +34,17 @@ export default function MisSolicitudes() {
       .then(setItems)
       .catch((e) => setError(e.message));
 
-    api('/job-requests/messages/unread-counts')
-      .then(setUnreadCounts)
-      .catch(() => {});
+    const loadUnreadCounts = () => {
+      api('/job-requests/messages/unread-counts')
+        .then(setUnreadCounts)
+        .catch(() => {});
+    };
+
+    loadUnreadCounts();
+
+    const interval = window.setInterval(loadUnreadCounts, 10000);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   async function loadProposals(jobId: string) {

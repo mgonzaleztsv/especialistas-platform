@@ -32,9 +32,17 @@ export default function MisTrabajos() {
   useEffect(() => {
     cargarTrabajos();
 
-    api('/job-requests/messages/unread-counts')
-      .then(setUnreadCounts)
-      .catch(() => {});
+    const loadUnreadCounts = () => {
+      api('/job-requests/messages/unread-counts')
+        .then(setUnreadCounts)
+        .catch(() => {});
+    };
+
+    loadUnreadCounts();
+
+    const interval = window.setInterval(loadUnreadCounts, 10000);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   async function iniciarTrabajo(jobId: string) {
