@@ -2,6 +2,7 @@
 
 import './globals.css';
 import { useEffect, useState } from 'react';
+import { api } from '../lib/api';
 
 export default function RootLayout({
   children
@@ -9,9 +10,33 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const [loggedIn, setLoggedIn] = useState(false);
+  const [unreadTotal, setUnreadTotal] = useState(0);
 
   useEffect(() => {
-    setLoggedIn(Boolean(localStorage.getItem('token')));
+    const token = localStorage.getItem('token');
+    const isLoggedIn = Boolean(token);
+
+    setLoggedIn(isLoggedIn);
+
+    if (!isLoggedIn) return;
+
+    const loadUnreadTotal = () => {
+      api('/job-requests/messages/unread-counts')
+        .then((counts) => {
+          const total = Object.values(counts || {}).reduce(
+            (sum: number, value: any) => sum + Number(value || 0),
+            0
+          );
+          setUnreadTotal(total);
+        })
+        .catch(() => {});
+    };
+
+    loadUnreadTotal();
+
+    const interval = window.setInterval(loadUnreadTotal, 10000);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   return (
@@ -41,7 +66,13 @@ export default function RootLayout({
               <>
                 <a href="/dashboard">Mi panel</a>
                 {' · '}
-                <a href="/perfil-especialista">Editar perfil</a>
+                {unreadTotal > 0 && (
+              <>
+                <strong>Mensajes nuevos ({unreadTotal})</strong>
+                {' · '}
+              </>
+            )}
+            <a href="/perfil-especialista">Editar perfil</a>
               </>
             ) : (
               <>
