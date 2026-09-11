@@ -14,6 +14,7 @@ export default function ConversacionPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [conversationInfo, setConversationInfo] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   async function loadMessages(showLoading = false) {
@@ -35,6 +36,20 @@ export default function ConversacionPage() {
       .then((user) => setCurrentUserId(user.id))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!jobId) return;
+
+    api('/job-requests/messages/conversations')
+      .then((data) => {
+        const conversation = data.find(
+          (item: any) => item.jobRequestId === jobId
+        );
+
+        setConversationInfo(conversation || null);
+      })
+      .catch(() => {});
+  }, [jobId]);
 
   useEffect(() => {
     if (!jobId) return;
@@ -84,7 +99,17 @@ export default function ConversacionPage() {
         <a href="/mensajes">← Volver a Mensajes</a>
       </p>
 
-      <h1>Conversación</h1>
+      <h1>
+        {conversationInfo?.otherUser?.name
+          ? `Conversación con ${conversationInfo.otherUser.name}`
+          : 'Conversación'}
+      </h1>
+
+      {conversationInfo?.jobTitle && (
+        <p>
+          <strong>Trabajo:</strong> {conversationInfo.jobTitle}
+        </p>
+      )}
 
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
