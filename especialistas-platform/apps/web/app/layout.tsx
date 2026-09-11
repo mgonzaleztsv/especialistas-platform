@@ -71,22 +71,12 @@ export default function RootLayout({
               <>
                 <a href="/dashboard">Mi panel</a>
                 {' · '}
-                {unreadTotal > 0 && (
-              <>
-                <a
-                  href={
-                    userRole === 'SPECIALIST'
-                      ? '/mis-trabajos'
-                      : userRole === 'CLIENT'
-                        ? '/mis-solicitudes'
-                        : '/dashboard'
-                  }
-                >
-                  <strong>Mensajes nuevos ({unreadTotal})</strong>
-                </a>
-                {' · '}
-              </>
-            )}
+                <a href="/mensajes">
+              {unreadTotal > 0
+                ? `Mensajes (${unreadTotal})`
+                : 'Mensajes'}
+            </a>
+            {' · '}
             <a href="/perfil-especialista">Editar perfil</a>
               </>
             ) : (

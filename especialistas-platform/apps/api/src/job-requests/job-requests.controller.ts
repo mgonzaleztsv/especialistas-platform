@@ -808,6 +808,137 @@ export class JobRequestsController {
     });
   }
 
+  @Get('messages/conversations')
+  async getMessageConversations(@Req() req: any) {
+    const jobs = await this.prisma.jobRequest.findMany({
+      where: {
+        messages: {
+          some: {}
+        },
+        OR: [
+          {
+            client: {
+              userId: req.user.userId
+            }
+          },
+          {
+            proposals: {
+              some: {
+                status: 'ACCEPTED',
+                specialist: {
+                  userId: req.user.userId
+                }
+              }
+            }
+          }
+        ]
+      },
+      include: {
+        client: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                role: true
+              }
+            }
+          }
+        },
+        proposals: {
+          where: {
+            status: 'ACCEPTED'
+          },
+          take: 1,
+          include: {
+            specialist: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    role: true
+                  }
+                }
+              }
+            }
+          }
+        },
+        messages: {
+          orderBy: {
+            createdAt: 'desc'
+          },
+          take: 1,
+          include: {
+            sender: {
+              select: {
+                id: true,
+                name: true,
+                role: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    const jobIds = jobs.map((job) => job.id);
+
+    const unreadMessages = jobIds.length
+      ? await this.prisma.message.findMany({
+          where: {
+            jobRequestId: {
+              in: jobIds
+            },
+            senderId: {
+              not: req.user.userId
+            },
+            readAt: null
+          },
+          select: {
+            jobRequestId: true
+          }
+        })
+      : [];
+
+    const unreadCounts: Record<string, number> = {};
+
+    for (const message of unreadMessages) {
+      unreadCounts[message.jobRequestId] =
+        (unreadCounts[message.jobRequestId] || 0) + 1;
+    }
+
+    return jobs
+      .map((job) => {
+        const specialistUser =
+          job.proposals[0]?.specialist?.user || null;
+
+        const otherUser =
+          job.client.user.id === req.user.userId
+            ? specialistUser
+            : job.client.user;
+
+        return {
+          jobRequestId: job.id,
+          jobTitle: job.title,
+          jobStatus: job.status,
+          otherUser,
+          lastMessage: job.messages[0] || null,
+          unreadCount: unreadCounts[job.id] || 0
+        };
+      })
+      .sort((a, b) => {
+        const dateA = a.lastMessage?.createdAt
+          ? new Date(a.lastMessage.createdAt).getTime()
+          : 0;
+        const dateB = b.lastMessage?.createdAt
+          ? new Date(b.lastMessage.createdAt).getTime()
+          : 0;
+
+        return dateB - dateA;
+      });
+  }
+
   @Get('messages/unread-counts')
   async getUnreadMessageCounts(@Req() req: any) {
     const messages = await this.prisma.message.findMany({
