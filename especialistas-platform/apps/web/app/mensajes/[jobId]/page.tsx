@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '../../../lib/api';
 
@@ -13,6 +13,8 @@ export default function ConversacionPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   async function loadMessages(showLoading = false) {
     if (showLoading) setLoading(true);
@@ -29,6 +31,12 @@ export default function ConversacionPage() {
   }
 
   useEffect(() => {
+    api('/users/me')
+      .then((user) => setCurrentUserId(user.id))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (!jobId) return;
 
     loadMessages(true);
@@ -40,6 +48,12 @@ export default function ConversacionPage() {
 
     return () => window.clearInterval(interval);
   }, [jobId]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: 'smooth'
+    });
+  }, [messages]);
 
   async function sendMessage() {
     const body = draft.trim();
@@ -86,22 +100,47 @@ export default function ConversacionPage() {
                 <div
                   key={message.id}
                   style={{
-                    marginBottom: '16px',
-                    paddingBottom: '12px',
-                    borderBottom: '1px solid #ddd'
+                    display: 'flex',
+                    justifyContent:
+                      message.sender?.id === currentUserId
+                        ? 'flex-end'
+                        : 'flex-start',
+                    marginBottom: '12px'
                   }}
                 >
-                  <p>
-                    <strong>{message.sender?.name || 'Usuario'}:</strong>{' '}
-                    {message.body}
-                  </p>
+                  <div
+                    style={{
+                      maxWidth: '75%',
+                      padding: '10px 14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '12px',
+                      textAlign:
+                        message.sender?.id === currentUserId
+                          ? 'right'
+                          : 'left'
+                    }}
+                  >
+                    <p style={{ margin: 0 }}>
+                      <strong>
+                        {message.sender?.id === currentUserId
+                          ? 'Tú'
+                          : message.sender?.name || 'Usuario'}
+                      </strong>
+                    </p>
 
-                  <small>
-                    {new Date(message.createdAt).toLocaleString()}
-                  </small>
+                    <p style={{ margin: '6px 0' }}>
+                      {message.body}
+                    </p>
+
+                    <small>
+                      {new Date(message.createdAt).toLocaleString()}
+                    </small>
+                  </div>
                 </div>
               ))
             )}
+
+            <div ref={messagesEndRef} />
           </div>
 
           <textarea
