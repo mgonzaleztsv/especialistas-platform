@@ -17,6 +17,7 @@ export default function MisSolicitudes() {
   const [chatDrafts, setChatDrafts] = useState<Record<string, string>>({});
   const [loadingChat, setLoadingChat] = useState<string | null>(null);
   const [sendingChat, setSendingChat] = useState<string | null>(null);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [editDraft, setEditDraft] = useState({
     title: '',
     description: '',
@@ -32,6 +33,10 @@ export default function MisSolicitudes() {
     api('/job-requests/me')
       .then(setItems)
       .catch((e) => setError(e.message));
+
+    api('/job-requests/messages/unread-counts')
+      .then(setUnreadCounts)
+      .catch(() => {});
   }, []);
 
   async function loadProposals(jobId: string) {
@@ -127,6 +132,11 @@ export default function MisSolicitudes() {
       setChatMessages((prev) => ({
         ...prev,
         [jobId]: data
+      }));
+
+      setUnreadCounts((prev) => ({
+        ...prev,
+        [jobId]: 0
       }));
     } catch (e: any) {
       setError(e.message || 'No se pudo cargar la conversación.');
@@ -345,7 +355,11 @@ export default function MisSolicitudes() {
                 >
                   {openChatJobId === job.id
                     ? 'Cerrar conversación'
-                    : 'Abrir conversación'}
+                    : `Abrir conversación${
+                        unreadCounts[job.id]
+                          ? ` (${unreadCounts[job.id]})`
+                          : ''
+                      }`}
                 </button>
 
                 {openChatJobId === job.id && (

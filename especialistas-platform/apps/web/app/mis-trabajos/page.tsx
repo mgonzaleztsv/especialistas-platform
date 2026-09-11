@@ -15,6 +15,7 @@ export default function MisTrabajos() {
   const [chatDrafts, setChatDrafts] = useState<Record<string, string>>({});
   const [loadingChat, setLoadingChat] = useState<string | null>(null);
   const [sendingChat, setSendingChat] = useState<string | null>(null);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
 
   function cargarTrabajos() {
     setLoading(true);
@@ -30,6 +31,10 @@ export default function MisTrabajos() {
 
   useEffect(() => {
     cargarTrabajos();
+
+    api('/job-requests/messages/unread-counts')
+      .then(setUnreadCounts)
+      .catch(() => {});
   }, []);
 
   async function iniciarTrabajo(jobId: string) {
@@ -82,6 +87,11 @@ export default function MisTrabajos() {
       setChatMessages((prev) => ({
         ...prev,
         [jobId]: data
+      }));
+
+      setUnreadCounts((prev) => ({
+        ...prev,
+        [jobId]: 0
       }));
     } catch (e: any) {
       setError(e.message || 'No se pudo cargar la conversación.');
@@ -237,8 +247,12 @@ export default function MisTrabajos() {
                     onClick={() => toggleChat(job.id)}
                   >
                     {openChatJobId === job.id
-                      ? 'Cerrar conversación'
-                      : 'Abrir conversación'}
+                  ? 'Cerrar conversación'
+                  : `Abrir conversación${
+                      unreadCounts[job.id]
+                        ? ` (${unreadCounts[job.id]})`
+                        : ''
+                    }`}
                   </button>
 
                   {openChatJobId === job.id && (

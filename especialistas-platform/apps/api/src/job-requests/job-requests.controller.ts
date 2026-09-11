@@ -808,6 +808,47 @@ export class JobRequestsController {
     });
   }
 
+  @Get('messages/unread-counts')
+  async getUnreadMessageCounts(@Req() req: any) {
+    const messages = await this.prisma.message.findMany({
+      where: {
+        senderId: { not: req.user.userId },
+        readAt: null,
+        jobRequest: {
+          OR: [
+            {
+              client: {
+                userId: req.user.userId
+              }
+            },
+            {
+              proposals: {
+                some: {
+                  status: 'ACCEPTED',
+                  specialist: {
+                    userId: req.user.userId
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      select: {
+        jobRequestId: true
+      }
+    });
+
+    const counts: Record<string, number> = {};
+
+    for (const message of messages) {
+      counts[message.jobRequestId] =
+        (counts[message.jobRequestId] || 0) + 1;
+    }
+
+    return counts;
+  }
+
   @Get(':id/messages')
   async getJobMessages(
     @Req() req: any,
