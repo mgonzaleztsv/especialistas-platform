@@ -11,6 +11,7 @@ export default function RootLayout({
 }) {
   const [loggedIn, setLoggedIn] = useState(false);
   const [unreadTotal, setUnreadTotal] = useState(0);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -19,6 +20,10 @@ export default function RootLayout({
     setLoggedIn(isLoggedIn);
 
     if (!isLoggedIn) return;
+
+    api('/users/me')
+      .then((user) => setUserRole(user.role))
+      .catch(() => {});
 
     const loadUnreadTotal = () => {
       api('/job-requests/messages/unread-counts')
@@ -68,7 +73,17 @@ export default function RootLayout({
                 {' · '}
                 {unreadTotal > 0 && (
               <>
-                <strong>Mensajes nuevos ({unreadTotal})</strong>
+                <a
+                  href={
+                    userRole === 'SPECIALIST'
+                      ? '/mis-trabajos'
+                      : userRole === 'CLIENT'
+                        ? '/mis-solicitudes'
+                        : '/dashboard'
+                  }
+                >
+                  <strong>Mensajes nuevos ({unreadTotal})</strong>
+                </a>
                 {' · '}
               </>
             )}
