@@ -66,20 +66,36 @@ export class JobRequestsController {
       throw new Error('La solicitud de trabajo no existe');
     }
 
-    if (jobRequest.status !== 'PUBLISHED') {
+    if (
+      !['PUBLISHED', 'RECEIVING_QUOTES'].includes(jobRequest.status)
+    ) {
       throw new Error('Esta solicitud ya no acepta propuestas');
     }
 
-    return this.prisma.proposal.create({
-      data: {
-        jobRequestId,
-        specialistId: specialist.id,
-        amount: Number(body.amount),
-        message: body.message || null,
-        availableDate: body.availableDate
-          ? new Date(body.availableDate)
-          : null
-      }
+    return this.prisma.$transaction(async (tx) => {
+      const proposal = await tx.proposal.create({
+        data: {
+          jobRequestId,
+          specialistId: specialist.id,
+          amount: Number(body.amount),
+          message: body.message || null,
+          availableDate: body.availableDate
+            ? new Date(body.availableDate)
+            : null
+        }
+      });
+
+      await tx.jobRequest.updateMany({
+        where: {
+          id: jobRequestId,
+          status: 'PUBLISHED'
+        },
+        data: {
+          status: 'RECEIVING_QUOTES'
+        }
+      });
+
+      return proposal;
     });
   }
 
@@ -107,7 +123,9 @@ export class JobRequestsController {
           in: ['PENDING', 'WITHDRAWN']
         },
         jobRequest: {
-          status: 'PUBLISHED'
+          status: {
+            in: ['PUBLISHED', 'RECEIVING_QUOTES']
+          }
         }
       }
     });
@@ -140,12 +158,26 @@ export class JobRequestsController {
         : null;
     }
 
-    return this.prisma.proposal.update({
-      where: { id: proposal.id },
-      data: {
-        ...data,
-        status: 'PENDING'
-      }
+    return this.prisma.$transaction(async (tx) => {
+      const updatedProposal = await tx.proposal.update({
+        where: { id: proposal.id },
+        data: {
+          ...data,
+          status: 'PENDING'
+        }
+      });
+
+      await tx.jobRequest.updateMany({
+        where: {
+          id: jobRequestId,
+          status: 'PUBLISHED'
+        },
+        data: {
+          status: 'RECEIVING_QUOTES'
+        }
+      });
+
+      return updatedProposal;
     });
   }
 
@@ -176,9 +208,32 @@ export class JobRequestsController {
       throw new Error('La propuesta no existe, no te pertenece o ya no puede retirarse');
     }
 
-    return this.prisma.proposal.update({
-      where: { id: proposal.id },
-      data: { status: 'WITHDRAWN' }
+    return this.prisma.$transaction(async (tx) => {
+      const updatedProposal = await tx.proposal.update({
+        where: { id: proposal.id },
+        data: { status: 'WITHDRAWN' }
+      });
+
+      const pendingCount = await tx.proposal.count({
+        where: {
+          jobRequestId,
+          status: 'PENDING'
+        }
+      });
+
+      if (pendingCount === 0) {
+        await tx.jobRequest.updateMany({
+          where: {
+            id: jobRequestId,
+            status: 'RECEIVING_QUOTES'
+          },
+          data: {
+            status: 'PUBLISHED'
+          }
+        });
+      }
+
+      return updatedProposal;
     });
   }
 
@@ -208,7 +263,9 @@ export class JobRequestsController {
 
     return this.prisma.jobRequest.findMany({
       where: {
-        status: 'PUBLISHED',
+        status: {
+          in: ['PUBLISHED', 'RECEIVING_QUOTES']
+        },
         ...(categoryIds.length
           ? { categoryId: { in: categoryIds } }
           : {}),
@@ -267,7 +324,9 @@ export class JobRequestsController {
         status: 'PENDING',
         jobRequest: {
           clientId: client.id,
-          status: 'PUBLISHED'
+          status: {
+            in: ['PUBLISHED', 'RECEIVING_QUOTES']
+          }
         }
       }
     });
@@ -278,9 +337,32 @@ export class JobRequestsController {
       );
     }
 
-    return this.prisma.proposal.update({
-      where: { id: proposal.id },
-      data: { status: 'REJECTED' }
+    return this.prisma.$transaction(async (tx) => {
+      const updatedProposal = await tx.proposal.update({
+        where: { id: proposal.id },
+        data: { status: 'REJECTED' }
+      });
+
+      const pendingCount = await tx.proposal.count({
+        where: {
+          jobRequestId,
+          status: 'PENDING'
+        }
+      });
+
+      if (pendingCount === 0) {
+        await tx.jobRequest.updateMany({
+          where: {
+            id: jobRequestId,
+            status: 'RECEIVING_QUOTES'
+          },
+          data: {
+            status: 'PUBLISHED'
+          }
+        });
+      }
+
+      return updatedProposal;
     });
   }
 
@@ -309,7 +391,9 @@ export class JobRequestsController {
       throw new Error('La solicitud no existe o no pertenece al cliente');
     }
 
-    if (jobRequest.status !== 'PUBLISHED') {
+    if (
+      !['PUBLISHED', 'RECEIVING_QUOTES'].includes(jobRequest.status)
+    ) {
       throw new Error('Este trabajo ya no acepta propuestas');
     }
 
