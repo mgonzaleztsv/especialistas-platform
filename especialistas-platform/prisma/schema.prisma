@@ -50,6 +50,7 @@ model Client {
   jobRequests JobRequest[]
   reviews     Review[]
   specialistReviews SpecialistReview[]
+  paymentsMade Payment[]
   createdAt   DateTime     @default(now())
 }
 
@@ -71,6 +72,7 @@ model Specialist {
   proposals          Proposal[]
   reviews          Review[]
   clientReviews SpecialistReview[]
+  paymentsReceived Payment[]
 }
 
 model Category {
@@ -129,8 +131,10 @@ enum JobRequestStatus {
   DRAFT
   PUBLISHED
   RECEIVING_QUOTES
+  AWAITING_PAYMENT
   ASSIGNED
   IN_PROGRESS
+  AWAITING_CLIENT_CONFIRMATION
   COMPLETED
   CANCELLED
 }
@@ -156,6 +160,7 @@ model JobRequest {
   review      Review?
   specialistReview SpecialistReview?
   messages         Message[]
+  payment          Payment?
 }
 
 model Message {
@@ -196,8 +201,46 @@ model Proposal {
   updatedAt DateTime @updatedAt
 
   @@unique([jobRequestId, specialistId])
+  payment Payment?
 }
 
+enum PaymentStatus {
+  PENDING
+  PAID
+  RELEASED
+  REFUNDED
+  FAILED
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  jobRequestId      String        @unique
+  proposalId        String        @unique
+  clientId          String
+  specialistId      String
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("USD")
+  status            PaymentStatus @default(PENDING)
+
+  provider          String?
+  providerPaymentId String?       @unique
+
+  paidAt            DateTime?
+  releasedAt        DateTime?
+  refundedAt        DateTime?
+
+  jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  proposal   Proposal   @relation(fields: [proposalId], references: [id], onDelete: Restrict)
+  client     Client     @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([specialistId])
+  @@index([status])
+}
 
 model Review {
   id           String   @id @default(uuid())

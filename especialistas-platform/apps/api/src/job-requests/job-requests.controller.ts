@@ -418,14 +418,27 @@ export class JobRequestsController {
       await tx.proposal.updateMany({
         where: {
           jobRequestId,
-          id: { not: proposalId }
+          id: { not: proposalId },
+          status: 'PENDING'
         },
         data: { status: 'REJECTED' }
       });
 
+      await tx.payment.create({
+        data: {
+          jobRequestId,
+          proposalId,
+          clientId: client.id,
+          specialistId: proposal.specialistId,
+          amount: proposal.amount,
+          currency: 'USD',
+          status: 'PENDING'
+        }
+      });
+
       await tx.jobRequest.update({
         where: { id: jobRequestId },
-        data: { status: 'ASSIGNED' }
+        data: { status: 'AWAITING_PAYMENT' }
       });
 
       return tx.proposal.findUnique({
@@ -443,6 +456,53 @@ export class JobRequestsController {
           }
         }
       });
+    });
+  }
+
+  @Post(':jobId/payment/confirm')
+  async confirmPayment(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string
+  ) {
+    const client = await this.prisma.client.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!client) {
+      throw new Error('El usuario no tiene perfil de cliente');
+    }
+
+    const payment = await this.prisma.payment.findFirst({
+      where: {
+        jobRequestId,
+        clientId: client.id,
+        status: 'PENDING',
+        jobRequest: {
+          status: 'AWAITING_PAYMENT'
+        }
+      }
+    });
+
+    if (!payment) {
+      throw new Error('No existe un pago pendiente para esta solicitud');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedPayment = await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: 'PAID',
+          provider: 'INTERNAL_MVP',
+          paidAt: new Date()
+        }
+      });
+
+      await tx.jobRequest.update({
+        where: { id: jobRequestId },
+        data: { status: 'ASSIGNED' }
+      });
+
+      return updatedPayment;
     });
   }
 
@@ -514,7 +574,7 @@ export class JobRequestsController {
 
     return this.prisma.jobRequest.update({
       where: { id: jobRequestId },
-      data: { status: 'COMPLETED' }
+      data: { status: 'AWAITING_CLIENT_CONFIRMATION' }
     });
   }
 
@@ -586,7 +646,7 @@ export class JobRequestsController {
     return this.prisma.jobRequest.findMany({
       where: {
         status: {
-          in: ['ASSIGNED', 'IN_PROGRESS', 'COMPLETED']
+          in: ['ASSIGNED', 'IN_PROGRESS', 'AWAITING_CLIENT_CONFIRMATION', 'COMPLETED']
         },
         proposals: {
           some: {
@@ -672,6 +732,54 @@ export class JobRequestsController {
       orderBy: {
         createdAt: 'desc'
       }
+    });
+  }
+
+  @Post(':id/complete/confirm')
+  async confirmJobCompletion(
+    @Req() req: any,
+    @Param('id') jobRequestId: string
+  ) {
+    const client = await this.prisma.client.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!client) {
+      throw new Error('El usuario no tiene perfil de cliente');
+    }
+
+    const jobRequest = await this.prisma.jobRequest.findFirst({
+      where: {
+        id: jobRequestId,
+        clientId: client.id,
+        status: 'AWAITING_CLIENT_CONFIRMATION'
+      },
+      include: {
+        payment: true
+      }
+    });
+
+    if (!jobRequest) {
+      throw new Error('El trabajo no está pendiente de confirmación o no pertenece al cliente');
+    }
+
+    if (!jobRequest.payment || jobRequest.payment.status !== 'PAID') {
+      throw new Error('El pago del trabajo no está listo para liberarse');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: jobRequest.payment!.id },
+        data: {
+          status: 'RELEASED',
+          releasedAt: new Date()
+        }
+      });
+
+      return tx.jobRequest.update({
+        where: { id: jobRequestId },
+        data: { status: 'COMPLETED' }
+      });
     });
   }
 

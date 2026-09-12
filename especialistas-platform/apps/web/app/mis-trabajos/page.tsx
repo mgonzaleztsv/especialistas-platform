@@ -170,6 +170,7 @@ export default function MisTrabajos() {
   function estado(status: string) {
     if (status === 'ASSIGNED') return 'Asignado';
     if (status === 'IN_PROGRESS') return 'En progreso';
+    if (status === 'AWAITING_CLIENT_CONFIRMATION') return 'Esperando confirmación del cliente';
     if (status === 'COMPLETED') return 'Completado';
     return status;
   }
@@ -356,7 +357,7 @@ export default function MisTrabajos() {
                 >
                   {updatingId === job.id
                     ? 'Completando...'
-                    : 'Completar trabajo'}
+                    : 'Marcar trabajo como terminado'}
                 </button>
               )}
 

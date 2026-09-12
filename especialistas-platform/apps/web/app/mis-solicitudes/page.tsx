@@ -11,6 +11,8 @@ export default function MisSolicitudes() {
   const [loadingProposals, setLoadingProposals] = useState<string | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rating: string; comment: string }>>({});
   const [submittingReview, setSubmittingReview] = useState<string | null>(null);
+  const [processingPayment, setProcessingPayment] = useState<string | null>(null);
+  const [confirmingCompletion, setConfirmingCompletion] = useState<string | null>(null);
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [openChatJobId, setOpenChatJobId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<Record<string, any[]>>({});
@@ -114,7 +116,7 @@ export default function MisSolicitudes() {
       setItems((prev) =>
         prev.map((job) =>
           job.id === jobId
-            ? { ...job, status: 'ASSIGNED' }
+            ? { ...job, status: 'AWAITING_PAYMENT' }
             : job
         )
       );
@@ -180,6 +182,48 @@ export default function MisSolicitudes() {
       setError(e.message || 'No se pudo enviar el mensaje.');
     } finally {
       setSendingChat(null);
+    }
+  }
+
+  async function confirmPayment(jobId: string) {
+    setError('');
+    setProcessingPayment(jobId);
+
+    try {
+      await api(`/job-requests/${jobId}/payment/confirm`, {
+        method: 'POST'
+      });
+
+      const updated = await api('/job-requests/me');
+      setItems(updated);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo confirmar el pago.');
+    } finally {
+      setProcessingPayment(null);
+    }
+  }
+
+  async function confirmCompletion(jobId: string) {
+    const confirmed = window.confirm(
+      '¿Confirmas que el especialista terminó correctamente el trabajo?'
+    );
+
+    if (!confirmed) return;
+
+    setError('');
+    setConfirmingCompletion(jobId);
+
+    try {
+      await api(`/job-requests/${jobId}/complete/confirm`, {
+        method: 'POST'
+      });
+
+      const updated = await api('/job-requests/me');
+      setItems(updated);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo confirmar la terminación del trabajo.');
+    } finally {
+      setConfirmingCompletion(null);
     }
   }
 
@@ -320,15 +364,19 @@ export default function MisSolicitudes() {
 
             <p>
               <strong>Estado:</strong>{' '}
-              {job.status === 'ASSIGNED'
-                ? 'Asignado'
-                : job.status === 'IN_PROGRESS'
-                  ? 'En progreso'
-                  : job.status === 'COMPLETED'
-                    ? 'Completado'
-                    : job.status === 'CANCELLED'
-                      ? 'Cancelado'
-                      : job.status}
+              {job.status === 'AWAITING_PAYMENT'
+                ? 'Pendiente de pago'
+                : job.status === 'ASSIGNED'
+                  ? 'Asignado'
+                  : job.status === 'IN_PROGRESS'
+                    ? 'En progreso'
+                    : job.status === 'AWAITING_CLIENT_CONFIRMATION'
+                      ? 'Esperando tu confirmación'
+                      : job.status === 'COMPLETED'
+                        ? 'Completado'
+                        : job.status === 'CANCELLED'
+                          ? 'Cancelado'
+                          : job.status}
             </p>
 
             {job.proposals?.[0]?.specialist?.user?.name && (
@@ -353,6 +401,44 @@ export default function MisSolicitudes() {
                   {Number(job.proposals[0].amount).toFixed(2)}
                 </p>
               </>
+            )}
+
+            {job.status === 'AWAITING_PAYMENT' && (
+              <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                <p>
+                  <strong>Pago pendiente.</strong> Esta confirmación es una
+                  simulación del MVP y todavía no realiza un cargo real.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => confirmPayment(job.id)}
+                  disabled={processingPayment === job.id}
+                >
+                  {processingPayment === job.id
+                    ? 'Procesando...'
+                    : 'Confirmar pago'}
+                </button>
+              </div>
+            )}
+
+            {job.status === 'AWAITING_CLIENT_CONFIRMATION' && (
+              <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                <p>
+                  El especialista indicó que terminó el trabajo. Confirma
+                  únicamente si el servicio fue completado correctamente.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => confirmCompletion(job.id)}
+                  disabled={confirmingCompletion === job.id}
+                >
+                  {confirmingCompletion === job.id
+                    ? 'Confirmando...'
+                    : 'Confirmar trabajo terminado'}
+                </button>
+              </div>
             )}
 
             {job.proposals?.[0]?.specialist?.user?.name && (

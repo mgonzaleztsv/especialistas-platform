@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "JobRequestStatus" ADD VALUE 'AWAITING_PAYMENT';
