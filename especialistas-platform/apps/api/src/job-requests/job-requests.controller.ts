@@ -866,7 +866,7 @@ export class JobRequestsController {
         id: jobRequestId,
         clientId: client.id,
         status: {
-          in: ['DRAFT', 'PUBLISHED', 'RECEIVING_QUOTES']
+          in: ['DRAFT', 'PUBLISHED']
         }
       }
     });

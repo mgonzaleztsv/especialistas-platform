@@ -612,7 +612,7 @@ export default function MisSolicitudes() {
               </div>
             )}
 
-            {['DRAFT', 'PUBLISHED', 'RECEIVING_QUOTES'].includes(job.status) && (
+            {['DRAFT', 'PUBLISHED'].includes(job.status) && (
               <>
               {editingJobId === job.id ? (
                 <div style={{ marginBottom: '12px' }}>
