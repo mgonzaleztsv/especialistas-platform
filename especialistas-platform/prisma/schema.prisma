@@ -38,7 +38,8 @@ model User {
   client       Client?
   specialist   Specialist?
   locations    Location[]
-  sentMessages Message[]
+  sentMessages        Message[]
+  terminationRequests TerminationRequest[]
 }
 
 model Client {
@@ -135,6 +136,8 @@ enum JobRequestStatus {
   ASSIGNED
   IN_PROGRESS
   AWAITING_CLIENT_CONFIRMATION
+  TERMINATION_REQUESTED
+  DISPUTED
   COMPLETED
   CANCELLED
 }
@@ -160,7 +163,8 @@ model JobRequest {
   review      Review?
   specialistReview SpecialistReview?
   messages         Message[]
-  payment          Payment?
+  payment            Payment?
+  terminationRequest TerminationRequest?
 }
 
 model Message {
@@ -209,6 +213,8 @@ enum PaymentStatus {
   PAID
   RELEASED
   REFUNDED
+  SETTLED
+  CANCELLED
   FAILED
 }
 
@@ -239,6 +245,76 @@ model Payment {
 
   @@index([clientId])
   @@index([specialistId])
+  movements PaymentMovement[]
+
+  @@index([status])
+}
+
+enum PaymentMovementType {
+  SPECIALIST_PAYOUT
+  CLIENT_REFUND
+  PENALTY
+}
+
+model PaymentMovement {
+  id          String              @id @default(uuid())
+  paymentId   String
+  type        PaymentMovementType
+  amount      Decimal             @db.Decimal(10, 2)
+  currency    String              @default("USD")
+  description String?
+  createdAt   DateTime            @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([type])
+}
+
+enum TerminationRequesterRole {
+  CLIENT
+  SPECIALIST
+}
+
+enum TerminationStatus {
+  PENDING
+  ACCEPTED
+  DISPUTED
+  RESOLVED
+}
+
+enum TerminationLiability {
+  UNDETERMINED
+  CLIENT
+  SPECIALIST
+  NONE
+}
+
+model TerminationRequest {
+  id             String                    @id @default(uuid())
+  jobRequestId   String                    @unique
+  requestedById  String
+  requesterRole      TerminationRequesterRole
+  jobStatusAtRequest JobRequestStatus
+  reasonCode         String
+  reasonDetails  String?
+  status         TerminationStatus         @default(PENDING)
+  liability      TerminationLiability      @default(UNDETERMINED)
+
+  specialistPayoutAmount Decimal? @db.Decimal(10, 2)
+  clientRefundAmount     Decimal? @db.Decimal(10, 2)
+  penaltyAmount          Decimal? @db.Decimal(10, 2)
+  resolutionNotes        String?
+
+  respondedAt DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  jobRequest  JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  requestedBy User       @relation(fields: [requestedById], references: [id], onDelete: Restrict)
+
+  @@index([requestedById])
   @@index([status])
 }
 

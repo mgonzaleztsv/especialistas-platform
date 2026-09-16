@@ -1000,6 +1000,378 @@ export class JobRequestsController {
     });
   }
 
+  @Post(':id/termination-request')
+  async requestTermination(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Body() body: any
+  ) {
+    const reasonCode = String(body.reasonCode || '').trim();
+    const reasonDetails = body.reasonDetails
+      ? String(body.reasonDetails).trim()
+      : null;
+
+    if (!reasonCode) {
+      throw new Error('Debes indicar la causa de la terminación');
+    }
+
+    const jobRequest = await this.prisma.jobRequest.findUnique({
+      where: { id: jobRequestId },
+      include: {
+        client: true,
+        proposals: {
+          where: { status: 'ACCEPTED' },
+          include: {
+            specialist: true
+          }
+        },
+        terminationRequest: true
+      }
+    });
+
+    if (!jobRequest) {
+      throw new Error('El trabajo no existe');
+    }
+
+    if (
+      !['AWAITING_PAYMENT', 'ASSIGNED', 'IN_PROGRESS'].includes(
+        jobRequest.status
+      )
+    ) {
+      throw new Error(
+        'Este trabajo no se encuentra en una etapa que permita solicitar terminación'
+      );
+    }
+
+    if (jobRequest.terminationRequest) {
+      throw new Error('Ya existe una solicitud de terminación para este trabajo');
+    }
+
+    let requesterRole: 'CLIENT' | 'SPECIALIST';
+
+    if (jobRequest.client.userId === req.user.userId) {
+      requesterRole = 'CLIENT';
+    } else {
+      const acceptedProposal = jobRequest.proposals.find(
+        (proposal) => proposal.specialist.userId === req.user.userId
+      );
+
+      if (!acceptedProposal) {
+        throw new Error('No tienes autorización para terminar este trabajo');
+      }
+
+      requesterRole = 'SPECIALIST';
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const terminationRequest = await tx.terminationRequest.create({
+        data: {
+          jobRequestId,
+          requestedById: req.user.userId,
+          requesterRole,
+          jobStatusAtRequest: jobRequest.status,
+          reasonCode,
+          reasonDetails
+        }
+      });
+
+      await tx.jobRequest.update({
+        where: { id: jobRequestId },
+        data: { status: 'TERMINATION_REQUESTED' }
+      });
+
+      return terminationRequest;
+    });
+  }
+
+  @Post(':id/termination-request/accept')
+  async acceptTermination(
+    @Req() req: any,
+    @Param('id') jobRequestId: string
+  ) {
+    const jobRequest = await this.prisma.jobRequest.findUnique({
+      where: { id: jobRequestId },
+      include: {
+        client: true,
+        payment: true,
+        proposals: {
+          where: { status: 'ACCEPTED' },
+          include: {
+            specialist: true
+          }
+        },
+        terminationRequest: true
+      }
+    });
+
+    if (
+      !jobRequest ||
+      jobRequest.status !== 'TERMINATION_REQUESTED' ||
+      !jobRequest.terminationRequest ||
+      jobRequest.terminationRequest.status !== 'PENDING'
+    ) {
+      throw new Error('No existe una terminación pendiente para este trabajo');
+    }
+
+    const termination = jobRequest.terminationRequest;
+    const acceptedProposal = jobRequest.proposals[0];
+
+    if (!acceptedProposal) {
+      throw new Error('No se encontró al especialista contratado');
+    }
+
+    if (
+      !['AWAITING_PAYMENT', 'ASSIGNED'].includes(
+        termination.jobStatusAtRequest
+      )
+    ) {
+      throw new Error(
+        'Este tipo de terminación todavía requiere revisión antes de resolverse'
+      );
+    }
+
+    const isClient = jobRequest.client.userId === req.user.userId;
+    const isSpecialist =
+      acceptedProposal.specialist.userId === req.user.userId;
+
+    if (termination.requesterRole === 'CLIENT' && !isSpecialist) {
+      throw new Error(
+        'Solo el especialista contratado puede aceptar esta terminación'
+      );
+    }
+
+    if (termination.requesterRole === 'SPECIALIST' && !isClient) {
+      throw new Error(
+        'Solo el cliente puede aceptar esta terminación'
+      );
+    }
+
+    if (!jobRequest.payment) {
+      throw new Error('No se encontró el pago asociado al trabajo');
+    }
+
+    const now = new Date();
+    const totalAmount = Number(jobRequest.payment.amount);
+
+    if (termination.jobStatusAtRequest === 'AWAITING_PAYMENT') {
+      if (jobRequest.payment.status !== 'PENDING') {
+        throw new Error('El pago pendiente no se encuentra disponible para cancelar');
+      }
+
+      return this.prisma.$transaction(async (tx) => {
+        await tx.payment.update({
+          where: { id: jobRequest.payment!.id },
+          data: { status: 'CANCELLED' }
+        });
+
+        await tx.terminationRequest.update({
+          where: { id: termination.id },
+          data: {
+            status: 'RESOLVED',
+            liability: 'NONE',
+            specialistPayoutAmount: 0,
+            clientRefundAmount: 0,
+            penaltyAmount: 0,
+            resolutionNotes:
+              'Terminación aceptada antes del pago. No hubo movimientos económicos.',
+            respondedAt: now,
+            resolvedAt: now
+          }
+        });
+
+        const updatedJob = await tx.jobRequest.update({
+          where: { id: jobRequestId },
+          data: { status: 'CANCELLED' }
+        });
+
+        return {
+          jobRequest: updatedJob,
+          settlement: {
+            totalAmount,
+            specialistPayout: 0,
+            clientRefund: 0,
+            penaltyAmount: 0
+          }
+        };
+      });
+    }
+
+    if (jobRequest.payment.status !== 'PAID') {
+      throw new Error('El pago no está disponible para liquidarse');
+    }
+
+    const specialistPayout =
+      termination.requesterRole === 'CLIENT'
+        ? Math.round(totalAmount * 0.10 * 100) / 100
+        : 0;
+
+    const clientRefund =
+      termination.requesterRole === 'CLIENT'
+        ? Math.round((totalAmount - specialistPayout) * 100) / 100
+        : totalAmount;
+
+    const penaltyAmount =
+      Math.round(totalAmount * 0.10 * 100) / 100;
+
+    return this.prisma.$transaction(async (tx) => {
+      const movements =
+        termination.requesterRole === 'CLIENT'
+          ? [
+              {
+                paymentId: jobRequest.payment!.id,
+                type: 'SPECIALIST_PAYOUT' as const,
+                amount: specialistPayout,
+                currency: jobRequest.payment!.currency,
+                description:
+                  'Compensación del 10% por terminación solicitada por el cliente antes de iniciar'
+              },
+              {
+                paymentId: jobRequest.payment!.id,
+                type: 'CLIENT_REFUND' as const,
+                amount: clientRefund,
+                currency: jobRequest.payment!.currency,
+                description:
+                  'Devolución al cliente por terminación antes de iniciar el trabajo'
+              }
+            ]
+          : [
+              {
+                paymentId: jobRequest.payment!.id,
+                type: 'CLIENT_REFUND' as const,
+                amount: clientRefund,
+                currency: jobRequest.payment!.currency,
+                description:
+                  'Devolución total al cliente por terminación solicitada por el especialista'
+              },
+              {
+                paymentId: jobRequest.payment!.id,
+                type: 'PENALTY' as const,
+                amount: penaltyAmount,
+                currency: jobRequest.payment!.currency,
+                description:
+                  'Penalización del 10% a cargo del especialista; registro interno MVP'
+              }
+            ];
+
+      await tx.paymentMovement.createMany({
+        data: movements
+      });
+
+      await tx.payment.update({
+        where: { id: jobRequest.payment!.id },
+        data: { status: 'SETTLED' }
+      });
+
+      await tx.terminationRequest.update({
+        where: { id: termination.id },
+        data: {
+          status: 'RESOLVED',
+          liability:
+            termination.requesterRole === 'CLIENT' ? 'CLIENT' : 'SPECIALIST',
+          specialistPayoutAmount: specialistPayout,
+          clientRefundAmount: clientRefund,
+          penaltyAmount,
+          resolutionNotes:
+            termination.requesterRole === 'CLIENT'
+              ? 'Terminación solicitada por el cliente y aceptada por el especialista antes de iniciar. Se aplica compensación del 10%.'
+              : 'Terminación solicitada por el especialista y aceptada por el cliente antes de iniciar. Se devuelve el 100% al cliente y se registra penalización del 10% al especialista.',
+          respondedAt: now,
+          resolvedAt: now
+        }
+      });
+
+      const updatedJob = await tx.jobRequest.update({
+        where: { id: jobRequestId },
+        data: { status: 'CANCELLED' }
+      });
+
+      return {
+        jobRequest: updatedJob,
+        settlement: {
+          totalAmount,
+          specialistPayout,
+          clientRefund,
+          penaltyAmount
+        }
+      };
+    });
+  }
+
+  @Post(':id/termination-request/dispute')
+  async disputeTermination(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Body() body: any
+  ) {
+    const resolutionNotes = body.reasonDetails
+      ? String(body.reasonDetails).trim()
+      : null;
+
+    const jobRequest = await this.prisma.jobRequest.findUnique({
+      where: { id: jobRequestId },
+      include: {
+        client: true,
+        proposals: {
+          where: { status: 'ACCEPTED' },
+          include: {
+            specialist: true
+          }
+        },
+        terminationRequest: true
+      }
+    });
+
+    if (
+      !jobRequest ||
+      jobRequest.status !== 'TERMINATION_REQUESTED' ||
+      !jobRequest.terminationRequest ||
+      jobRequest.terminationRequest.status !== 'PENDING'
+    ) {
+      throw new Error('No existe una terminación pendiente para este trabajo');
+    }
+
+    const termination = jobRequest.terminationRequest;
+    const acceptedProposal = jobRequest.proposals[0];
+
+    if (!acceptedProposal) {
+      throw new Error('No se encontró al especialista contratado');
+    }
+
+    const isClient = jobRequest.client.userId === req.user.userId;
+    const isSpecialist =
+      acceptedProposal.specialist.userId === req.user.userId;
+
+    if (termination.requesterRole === 'CLIENT' && !isSpecialist) {
+      throw new Error(
+        'Solo el especialista contratado puede disputar esta terminación'
+      );
+    }
+
+    if (termination.requesterRole === 'SPECIALIST' && !isClient) {
+      throw new Error(
+        'Solo el cliente puede disputar esta terminación'
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updatedTermination = await tx.terminationRequest.update({
+        where: { id: termination.id },
+        data: {
+          status: 'DISPUTED',
+          resolutionNotes,
+          respondedAt: new Date()
+        }
+      });
+
+      await tx.jobRequest.update({
+        where: { id: jobRequestId },
+        data: { status: 'DISPUTED' }
+      });
+
+      return updatedTermination;
+    });
+  }
+
   @Get('messages/conversations')
   async getMessageConversations(@Req() req: any) {
     const jobs = await this.prisma.jobRequest.findMany({
