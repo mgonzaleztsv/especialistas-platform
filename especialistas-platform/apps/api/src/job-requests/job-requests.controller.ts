@@ -1011,6 +1011,33 @@ export class JobRequestsController {
       ? String(body.reasonDetails).trim()
       : null;
 
+    const claimedLiabilityRaw = String(
+      body.claimedLiability || ''
+    ).trim().toUpperCase();
+
+    let claimedLiability:
+      | 'CLIENT'
+      | 'SPECIALIST'
+      | 'NONE'
+      | 'UNDETERMINED' = 'UNDETERMINED';
+
+    if (claimedLiabilityRaw) {
+      if (
+        !['CLIENT', 'SPECIALIST', 'NONE'].includes(
+          claimedLiabilityRaw
+        )
+      ) {
+        throw new Error(
+          'La responsabilidad reclamada debe ser CLIENT, SPECIALIST o NONE'
+        );
+      }
+
+      claimedLiability = claimedLiabilityRaw as
+        | 'CLIENT'
+        | 'SPECIALIST'
+        | 'NONE';
+    }
+
     if (!reasonCode) {
       throw new Error('Debes indicar la causa de la terminación');
     }
@@ -1047,6 +1074,15 @@ export class JobRequestsController {
       throw new Error('Ya existe una solicitud de terminación para este trabajo');
     }
 
+    if (
+      jobRequest.status === 'IN_PROGRESS' &&
+      claimedLiability === 'UNDETERMINED'
+    ) {
+      throw new Error(
+        'Debes indicar a quién atribuyes la responsabilidad de la terminación'
+      );
+    }
+
     let requesterRole: 'CLIENT' | 'SPECIALIST';
 
     if (jobRequest.client.userId === req.user.userId) {
@@ -1071,7 +1107,8 @@ export class JobRequestsController {
           requesterRole,
           jobStatusAtRequest: jobRequest.status,
           reasonCode,
-          reasonDetails
+          reasonDetails,
+          claimedLiability
         }
       });
 
@@ -1121,7 +1158,7 @@ export class JobRequestsController {
     }
 
     if (
-      !['AWAITING_PAYMENT', 'ASSIGNED'].includes(
+      !['AWAITING_PAYMENT', 'ASSIGNED', 'IN_PROGRESS'].includes(
         termination.jobStatusAtRequest
       )
     ) {
@@ -1198,6 +1235,85 @@ export class JobRequestsController {
 
     if (jobRequest.payment.status !== 'PAID') {
       throw new Error('El pago no está disponible para liquidarse');
+    }
+
+    if (termination.jobStatusAtRequest === 'IN_PROGRESS') {
+      if (
+        !['CLIENT', 'SPECIALIST'].includes(
+          termination.claimedLiability
+        )
+      ) {
+        throw new Error(
+          'La terminación en progreso requiere atribuir la responsabilidad al cliente o al especialista'
+        );
+      }
+
+      const liability = termination.claimedLiability;
+
+      const specialistPayout =
+        liability === 'CLIENT' ? totalAmount : 0;
+
+      const clientRefund =
+        liability === 'SPECIALIST' ? totalAmount : 0;
+
+      return this.prisma.$transaction(async (tx) => {
+        await tx.paymentMovement.create({
+          data: {
+            paymentId: jobRequest.payment!.id,
+            type:
+              liability === 'CLIENT'
+                ? 'SPECIALIST_PAYOUT'
+                : 'CLIENT_REFUND',
+            amount:
+              liability === 'CLIENT'
+                ? specialistPayout
+                : clientRefund,
+            currency: jobRequest.payment!.currency,
+            description:
+              liability === 'CLIENT'
+                ? 'Pago total al especialista por terminación de trabajo en progreso atribuible al cliente'
+                : 'Devolución total al cliente por terminación de trabajo en progreso atribuible al especialista'
+          }
+        });
+
+        await tx.payment.update({
+          where: { id: jobRequest.payment!.id },
+          data: { status: 'SETTLED' }
+        });
+
+        await tx.terminationRequest.update({
+          where: { id: termination.id },
+          data: {
+            status: 'RESOLVED',
+            liability,
+            specialistPayoutAmount: specialistPayout,
+            clientRefundAmount: clientRefund,
+            penaltyAmount: 0,
+            resolutionNotes:
+              liability === 'CLIENT'
+                ? 'Responsabilidad del cliente aceptada. El especialista recibe el 100% del precio acordado.'
+                : 'Responsabilidad del especialista aceptada. El cliente recibe el reembolso del 100% del precio. Daños adicionales o indemnización se evaluarán por separado.',
+            respondedAt: now,
+            resolvedAt: now
+          }
+        });
+
+        const updatedJob = await tx.jobRequest.update({
+          where: { id: jobRequestId },
+          data: { status: 'CANCELLED' }
+        });
+
+        return {
+          jobRequest: updatedJob,
+          settlement: {
+            totalAmount,
+            specialistPayout,
+            clientRefund,
+            penaltyAmount: 0,
+            liability
+          }
+        };
+      });
     }
 
     const specialistPayout =

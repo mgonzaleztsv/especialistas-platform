@@ -298,8 +298,9 @@ model TerminationRequest {
   jobStatusAtRequest JobRequestStatus
   reasonCode         String
   reasonDetails  String?
-  status         TerminationStatus         @default(PENDING)
-  liability      TerminationLiability      @default(UNDETERMINED)
+  status             TerminationStatus         @default(PENDING)
+  claimedLiability   TerminationLiability      @default(UNDETERMINED)
+  liability          TerminationLiability      @default(UNDETERMINED)
 
   specialistPayoutAmount Decimal? @db.Decimal(10, 2)
   clientRefundAmount     Decimal? @db.Decimal(10, 2)
