@@ -1488,6 +1488,119 @@ export class JobRequestsController {
     });
   }
 
+  @Post(':id/damage-claims')
+  async createDamageClaim(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Body() body: any
+  ) {
+    const type = String(body.type || '').trim().toUpperCase();
+    const description = String(body.description || '').trim();
+
+    if (!['RESTITUTION', 'COMPENSATION', 'BOTH'].includes(type)) {
+      throw new Error(
+        'El tipo de reclamación debe ser RESTITUTION, COMPENSATION o BOTH'
+      );
+    }
+
+    if (!description) {
+      throw new Error('Debes describir el daño o la restitución solicitada');
+    }
+
+    let claimedAmount: number | null = null;
+
+    if (body.claimedAmount !== undefined && body.claimedAmount !== null) {
+      claimedAmount = Number(body.claimedAmount);
+
+      if (!Number.isFinite(claimedAmount) || claimedAmount <= 0) {
+        throw new Error('El monto reclamado debe ser mayor que cero');
+      }
+
+      claimedAmount = Math.round(claimedAmount * 100) / 100;
+    }
+
+    if (
+      ['COMPENSATION', 'BOTH'].includes(type) &&
+      claimedAmount === null
+    ) {
+      throw new Error(
+        'Debes indicar el monto reclamado cuando solicitas indemnización'
+      );
+    }
+
+    const jobRequest = await this.prisma.jobRequest.findUnique({
+      where: { id: jobRequestId },
+      include: {
+        client: true,
+        proposals: {
+          where: { status: 'ACCEPTED' },
+          include: {
+            specialist: true
+          }
+        },
+        terminationRequest: true
+      }
+    });
+
+    if (!jobRequest || !jobRequest.terminationRequest) {
+      throw new Error(
+        'No existe una terminación asociada a este trabajo'
+      );
+    }
+
+    const termination = jobRequest.terminationRequest;
+
+    if (termination.jobStatusAtRequest !== 'IN_PROGRESS') {
+      throw new Error(
+        'Las reclamaciones de daños de este flujo solo aplican a trabajos que ya habían iniciado'
+      );
+    }
+
+    if (!['RESOLVED', 'DISPUTED'].includes(termination.status)) {
+      throw new Error(
+        'La terminación debe estar resuelta o en disputa antes de registrar daños'
+      );
+    }
+
+    const acceptedProposal = jobRequest.proposals[0];
+
+    if (!acceptedProposal) {
+      throw new Error('No se encontró al especialista contratado');
+    }
+
+    const isClient = jobRequest.client.userId === req.user.userId;
+    const isSpecialist =
+      acceptedProposal.specialist.userId === req.user.userId;
+
+    if (!isClient && !isSpecialist) {
+      throw new Error(
+        'No tienes autorización para registrar daños en este trabajo'
+      );
+    }
+
+    const claimedAgainst = isClient ? 'SPECIALIST' : 'CLIENT';
+
+    if (
+      termination.status === 'RESOLVED' &&
+      termination.liability !== claimedAgainst
+    ) {
+      throw new Error(
+        'La responsabilidad resuelta no corresponde a la parte contra la que se reclama'
+      );
+    }
+
+    return this.prisma.damageClaim.create({
+      data: {
+        terminationRequestId: termination.id,
+        claimedById: req.user.userId,
+        claimedAgainst,
+        type: type as 'RESTITUTION' | 'COMPENSATION' | 'BOTH',
+        description,
+        claimedAmount
+      }
+    });
+  }
+
   @Get('messages/conversations')
   async getMessageConversations(@Req() req: any) {
     const jobs = await this.prisma.jobRequest.findMany({

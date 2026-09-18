@@ -40,6 +40,7 @@ model User {
   locations    Location[]
   sentMessages        Message[]
   terminationRequests TerminationRequest[]
+  damageClaimsRequested DamageClaim[]
 }
 
 model Client {
@@ -313,9 +314,56 @@ model TerminationRequest {
   updatedAt   DateTime @updatedAt
 
   jobRequest  JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
-  requestedBy User       @relation(fields: [requestedById], references: [id], onDelete: Restrict)
+  requestedBy  User          @relation(fields: [requestedById], references: [id], onDelete: Restrict)
+  damageClaims DamageClaim[]
 
   @@index([requestedById])
+  @@index([status])
+}
+
+enum DamageClaimType {
+  RESTITUTION
+  COMPENSATION
+  BOTH
+}
+
+enum DamageClaimStatus {
+  PENDING
+  ACCEPTED
+  DISPUTED
+  RESOLVED
+  REJECTED
+}
+
+enum DamageCoverageSource {
+  UNDETERMINED
+  RESPONSIBLE_PARTY
+  PLATFORM_INSURANCE
+  PLATFORM
+}
+
+model DamageClaim {
+  id                   String               @id @default(uuid())
+  terminationRequestId String
+  claimedById          String
+  claimedAgainst       TerminationLiability
+  type                 DamageClaimType
+  description          String
+  claimedAmount        Decimal?             @db.Decimal(10, 2)
+  approvedAmount       Decimal?             @db.Decimal(10, 2)
+  status               DamageClaimStatus    @default(PENDING)
+  coverageSource       DamageCoverageSource @default(UNDETERMINED)
+  insuranceReference   String?
+  resolutionNotes      String?
+  resolvedAt           DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  terminationRequest TerminationRequest @relation(fields: [terminationRequestId], references: [id], onDelete: Cascade)
+  claimedBy          User               @relation(fields: [claimedById], references: [id], onDelete: Restrict)
+
+  @@index([terminationRequestId])
+  @@index([claimedById])
   @@index([status])
 }
 
