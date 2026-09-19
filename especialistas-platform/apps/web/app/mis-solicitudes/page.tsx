@@ -20,6 +20,13 @@ export default function MisSolicitudes() {
     reasonDetails: '',
     claimedLiability: ''
   });
+  const [damageClaimJobId, setDamageClaimJobId] = useState<string | null>(null);
+  const [submittingDamageClaim, setSubmittingDamageClaim] = useState<string | null>(null);
+  const [damageClaimDraft, setDamageClaimDraft] = useState({
+    type: 'RESTITUTION',
+    description: '',
+    claimedAmount: ''
+  });
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [openChatJobId, setOpenChatJobId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<Record<string, any[]>>({});
@@ -399,6 +406,49 @@ export default function MisSolicitudes() {
     }
   }
 
+  function startDamageClaim(jobId: string) {
+    setDamageClaimJobId(jobId);
+    setDamageClaimDraft({ type: 'RESTITUTION', description: '', claimedAmount: '' });
+    setError('');
+  }
+
+  function cancelDamageClaim() {
+    setDamageClaimJobId(null);
+    setDamageClaimDraft({ type: 'RESTITUTION', description: '', claimedAmount: '' });
+  }
+
+  async function submitDamageClaim(jobId: string) {
+    if (!damageClaimDraft.description.trim()) {
+      setError('Debes describir el daño reclamado.');
+      return;
+    }
+
+    const body: any = {
+      type: damageClaimDraft.type,
+      description: damageClaimDraft.description.trim()
+    };
+
+    if (damageClaimDraft.claimedAmount) {
+      body.claimedAmount = Number(damageClaimDraft.claimedAmount);
+    }
+
+    setSubmittingDamageClaim(jobId);
+    setError('');
+
+    try {
+      await api(`/job-requests/${jobId}/damage-claims`, {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      setItems(await api('/job-requests/me'));
+      cancelDamageClaim();
+    } catch (e: any) {
+      setError(e.message || 'No se pudo enviar la reclamación.');
+    } finally {
+      setSubmittingDamageClaim(null);
+    }
+  }
+
   async function acceptTermination(jobId: string) {
     const confirmed = window.confirm(
       '¿Aceptas la terminación anticipada? Esta decisión puede generar reembolsos, pagos o penalizaciones según la etapa del trabajo.'
@@ -506,6 +556,110 @@ export default function MisSolicitudes() {
                               ? 'Cancelado'
                               : job.status}
             </p>
+
+            {job.terminationRequest?.jobStatusAtRequest === 'IN_PROGRESS' &&
+              (job.terminationRequest.status === 'DISPUTED' ||
+                (job.terminationRequest.status === 'RESOLVED' &&
+                  job.terminationRequest.liability === 'SPECIALIST')) && (
+                <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                  {damageClaimJobId === job.id ? (
+                    <div>
+                      <h4>Reclamación de daños</h4>
+
+                      <select
+                        value={damageClaimDraft.type}
+                        onChange={(e) =>
+                          setDamageClaimDraft((prev) => ({
+                            ...prev,
+                            type: e.target.value
+                          }))
+                        }
+                      >
+                        <option value="RESTITUTION">Restitución</option>
+                        <option value="COMPENSATION">Compensación</option>
+                        <option value="BOTH">Restitución y compensación</option>
+                      </select>
+
+                      <textarea
+                        placeholder="Describe el daño o perjuicio"
+                        value={damageClaimDraft.description}
+                        onChange={(e) =>
+                          setDamageClaimDraft((prev) => ({
+                            ...prev,
+                            description: e.target.value
+                          }))
+                        }
+                      />
+
+                      {damageClaimDraft.type !== 'RESTITUTION' && (
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="Monto reclamado"
+                          value={damageClaimDraft.claimedAmount}
+                          onChange={(e) =>
+                            setDamageClaimDraft((prev) => ({
+                              ...prev,
+                              claimedAmount: e.target.value
+                            }))
+                          }
+                        />
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => submitDamageClaim(job.id)}
+                        disabled={submittingDamageClaim === job.id}
+                      >
+                        Enviar reclamación
+                      </button>
+
+                      <button type="button" onClick={cancelDamageClaim}>
+                        Cancelar
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => startDamageClaim(job.id)}>
+                      Presentar reclamación de daños
+                    </button>
+                  )}
+                </div>
+              )}
+
+            {!!job.terminationRequest?.damageClaims?.length && (
+              <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                <h4>Reclamaciones de daños</h4>
+
+                {job.terminationRequest.damageClaims.map((claim: any) => (
+                  <div key={claim.id} style={{ marginBottom: '16px' }}>
+                    <p><strong>Tipo:</strong> {claim.type}</p>
+                    <p><strong>Descripción:</strong> {claim.description}</p>
+
+                    {claim.claimedAmount !== null && (
+                      <p>
+                        <strong>Monto reclamado:</strong> $
+                        {Number(claim.claimedAmount).toFixed(2)}
+                      </p>
+                    )}
+
+                    {claim.approvedAmount !== null && (
+                      <p>
+                        <strong>Monto aprobado:</strong> $
+                        {Number(claim.approvedAmount).toFixed(2)}
+                      </p>
+                    )}
+
+                    <p><strong>Estado:</strong> {claim.status}</p>
+
+                    {claim.resolutionNotes && (
+                      <p>
+                        <strong>Resolución:</strong> {claim.resolutionNotes}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {job.proposals?.[0]?.specialist?.user?.name && (
               <>

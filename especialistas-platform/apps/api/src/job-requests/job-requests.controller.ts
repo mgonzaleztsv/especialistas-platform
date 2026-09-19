@@ -2220,7 +2220,11 @@ export class JobRequestsController {
       include: {
         category: true,
         review: true,
-        terminationRequest: true,
+        terminationRequest: {
+          include: {
+            damageClaims: true
+          }
+        },
         proposals: {
           where: {
             status: 'ACCEPTED'
