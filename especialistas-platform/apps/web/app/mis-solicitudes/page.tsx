@@ -399,6 +399,62 @@ export default function MisSolicitudes() {
     }
   }
 
+  async function acceptTermination(jobId: string) {
+    const confirmed = window.confirm(
+      '¿Aceptas la terminación anticipada? Esta decisión puede generar reembolsos, pagos o penalizaciones según la etapa del trabajo.'
+    );
+
+    if (!confirmed) return;
+
+    setError('');
+    setSubmittingTermination(jobId);
+
+    try {
+      await api(`/job-requests/${jobId}/termination-request/accept`, {
+        method: 'POST'
+      });
+
+      const updated = await api('/job-requests/me');
+      setItems(updated);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo aceptar la terminación.');
+    } finally {
+      setSubmittingTermination(null);
+    }
+  }
+
+  async function disputeTermination(jobId: string) {
+    const reason = window.prompt(
+      'Indica brevemente por qué disputas la terminación:'
+    );
+
+    if (reason === null) return;
+
+    if (!reason.trim()) {
+      setError('Debes indicar el motivo de la disputa.');
+      return;
+    }
+
+    setError('');
+    setSubmittingTermination(jobId);
+
+    try {
+      await api(`/job-requests/${jobId}/termination-request/dispute`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reasonDetails: reason.trim()
+        })
+      });
+
+      const updated = await api('/job-requests/me');
+      setItems(updated);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo disputar la terminación.');
+    } finally {
+      setSubmittingTermination(null);
+    }
+  }
+
   return (
     <main className="wrap">
       <h1>Mis solicitudes</h1>
@@ -440,11 +496,15 @@ export default function MisSolicitudes() {
                     ? 'En progreso'
                     : job.status === 'AWAITING_CLIENT_CONFIRMATION'
                       ? 'Esperando tu confirmación'
-                      : job.status === 'COMPLETED'
-                        ? 'Completado'
-                        : job.status === 'CANCELLED'
-                          ? 'Cancelado'
-                          : job.status}
+                      : job.status === 'TERMINATION_REQUESTED'
+                        ? 'Terminación solicitada'
+                        : job.status === 'DISPUTED'
+                          ? 'Terminación en disputa'
+                          : job.status === 'COMPLETED'
+                            ? 'Completado'
+                            : job.status === 'CANCELLED'
+                              ? 'Cancelado'
+                              : job.status}
             </p>
 
             {job.proposals?.[0]?.specialist?.user?.name && (
@@ -506,6 +566,162 @@ export default function MisSolicitudes() {
                     ? 'Confirmando...'
                     : 'Confirmar trabajo terminado'}
                 </button>
+              </div>
+            )}
+
+            {['AWAITING_PAYMENT', 'ASSIGNED', 'IN_PROGRESS'].includes(job.status) && (
+              <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                {terminationJobId === job.id ? (
+                  <div>
+                    <h4>Solicitar terminación anticipada</h4>
+
+                    <label>Motivo</label>
+                    <input
+                      value={terminationDraft.reasonCode}
+                      onChange={(e) =>
+                        setTerminationDraft((prev) => ({
+                          ...prev,
+                          reasonCode: e.target.value
+                        }))
+                      }
+                    />
+
+                    <label>Detalles</label>
+                    <textarea
+                      value={terminationDraft.reasonDetails}
+                      onChange={(e) =>
+                        setTerminationDraft((prev) => ({
+                          ...prev,
+                          reasonDetails: e.target.value
+                        }))
+                      }
+                    />
+
+                    {job.status === 'IN_PROGRESS' && (
+                      <>
+                        <label>Responsabilidad atribuida</label>
+                        <select
+                          value={terminationDraft.claimedLiability}
+                          onChange={(e) =>
+                            setTerminationDraft((prev) => ({
+                              ...prev,
+                              claimedLiability: e.target.value
+                            }))
+                          }
+                        >
+                          <option value="">Selecciona</option>
+                          <option value="CLIENT">Cliente</option>
+                          <option value="SPECIALIST">Especialista</option>
+                        </select>
+                      </>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => submitTermination(job)}
+                      disabled={submittingTermination === job.id}
+                      style={{ marginTop: '8px' }}
+                    >
+                      {submittingTermination === job.id
+                        ? 'Enviando...'
+                        : 'Enviar solicitud de terminación'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={cancelTermination}
+                      style={{ marginTop: '8px' }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => startTermination(job.id)}
+                  >
+                    Solicitar terminación anticipada
+                  </button>
+                )}
+              </div>
+            )}
+
+            {job.status === 'TERMINATION_REQUESTED' && job.terminationRequest && (
+              <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                <h4>Solicitud de terminación anticipada</h4>
+
+                <p>
+                  <strong>Solicitada por:</strong>{' '}
+                  {job.terminationRequest.requesterRole === 'CLIENT'
+                    ? 'Cliente'
+                    : 'Especialista'}
+                </p>
+
+                <p>
+                  <strong>Motivo:</strong>{' '}
+                  {job.terminationRequest.reasonCode}
+                </p>
+
+                {job.terminationRequest.reasonDetails && (
+                  <p>
+                    <strong>Detalles:</strong>{' '}
+                    {job.terminationRequest.reasonDetails}
+                  </p>
+                )}
+
+                {job.terminationRequest.claimedLiability &&
+                  job.terminationRequest.claimedLiability !== 'UNDETERMINED' && (
+                    <p>
+                      <strong>Responsabilidad atribuida:</strong>{' '}
+                      {job.terminationRequest.claimedLiability === 'CLIENT'
+                        ? 'Cliente'
+                        : job.terminationRequest.claimedLiability === 'SPECIALIST'
+                          ? 'Especialista'
+                          : 'Ninguna'}
+                    </p>
+                  )}
+
+                {job.terminationRequest.requesterRole === 'SPECIALIST' ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => acceptTermination(job.id)}
+                      disabled={submittingTermination === job.id}
+                    >
+                      Aceptar terminación
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => disputeTermination(job.id)}
+                      disabled={submittingTermination === job.id}
+                      style={{ marginTop: '8px' }}
+                    >
+                      Disputar terminación
+                    </button>
+                  </>
+                ) : (
+                  <p>
+                    Esperando respuesta del especialista.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {job.status === 'DISPUTED' && job.terminationRequest && (
+              <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                <h4>Terminación en disputa</h4>
+                <p>
+                  La terminación fue disputada y requiere revisión antes de
+                  liberar o devolver fondos.
+                </p>
+
+                {job.terminationRequest.resolutionNotes && (
+                  <p>
+                    <strong>Motivo de la disputa:</strong>{' '}
+                    {job.terminationRequest.resolutionNotes}
+                  </p>
+                )}
               </div>
             )}
 

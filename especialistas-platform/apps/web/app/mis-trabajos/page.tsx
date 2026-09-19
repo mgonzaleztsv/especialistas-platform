@@ -167,10 +167,66 @@ export default function MisTrabajos() {
     }
   }
 
+  async function aceptarTerminacion(jobId: string) {
+    const confirmed = window.confirm(
+      '¿Aceptas la terminación anticipada? Esta decisión puede generar pagos, reembolsos o penalizaciones según la etapa del trabajo.'
+    );
+
+    if (!confirmed) return;
+
+    setUpdatingId(jobId);
+    setError('');
+
+    try {
+      await api(`/job-requests/${jobId}/termination-request/accept`, {
+        method: 'POST'
+      });
+
+      cargarTrabajos();
+    } catch (e: any) {
+      setError(e.message || 'No se pudo aceptar la terminación.');
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function disputarTerminacion(jobId: string) {
+    const reason = window.prompt(
+      'Indica brevemente por qué disputas la terminación:'
+    );
+
+    if (reason === null) return;
+
+    if (!reason.trim()) {
+      setError('Debes indicar el motivo de la disputa.');
+      return;
+    }
+
+    setUpdatingId(jobId);
+    setError('');
+
+    try {
+      await api(`/job-requests/${jobId}/termination-request/dispute`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reasonDetails: reason.trim()
+        })
+      });
+
+      cargarTrabajos();
+    } catch (e: any) {
+      setError(e.message || 'No se pudo disputar la terminación.');
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
   function estado(status: string) {
     if (status === 'ASSIGNED') return 'Asignado';
     if (status === 'IN_PROGRESS') return 'En progreso';
     if (status === 'AWAITING_CLIENT_CONFIRMATION') return 'Esperando confirmación del cliente';
+    if (status === 'TERMINATION_REQUESTED') return 'Terminación solicitada';
+    if (status === 'DISPUTED') return 'Terminación en disputa';
     if (status === 'COMPLETED') return 'Completado';
     return status;
   }
@@ -333,6 +389,83 @@ export default function MisTrabajos() {
                         </>
                       )}
                     </div>
+                  )}
+                </div>
+              )}
+
+              {job.status === 'TERMINATION_REQUESTED' && job.terminationRequest && (
+                <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                  <h3>Solicitud de terminación anticipada</h3>
+
+                  <p>
+                    <strong>Solicitada por:</strong>{' '}
+                    {job.terminationRequest.requesterRole === 'CLIENT'
+                      ? 'Cliente'
+                      : 'Especialista'}
+                  </p>
+
+                  <p>
+                    <strong>Motivo:</strong>{' '}
+                    {job.terminationRequest.reasonCode}
+                  </p>
+
+                  {job.terminationRequest.reasonDetails && (
+                    <p>
+                      <strong>Detalles:</strong>{' '}
+                      {job.terminationRequest.reasonDetails}
+                    </p>
+                  )}
+
+                  {job.terminationRequest.claimedLiability &&
+                    job.terminationRequest.claimedLiability !== 'UNDETERMINED' && (
+                      <p>
+                        <strong>Responsabilidad atribuida:</strong>{' '}
+                        {job.terminationRequest.claimedLiability === 'CLIENT'
+                          ? 'Cliente'
+                          : job.terminationRequest.claimedLiability === 'SPECIALIST'
+                            ? 'Especialista'
+                            : 'Ninguna'}
+                      </p>
+                    )}
+
+                  {job.terminationRequest.requesterRole === 'CLIENT' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => aceptarTerminacion(job.id)}
+                        disabled={updatingId === job.id}
+                      >
+                        Aceptar terminación
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => disputarTerminacion(job.id)}
+                        disabled={updatingId === job.id}
+                        style={{ marginTop: '8px' }}
+                      >
+                        Disputar terminación
+                      </button>
+                    </>
+                  ) : (
+                    <p>Esperando respuesta del cliente.</p>
+                  )}
+                </div>
+              )}
+
+              {job.status === 'DISPUTED' && job.terminationRequest && (
+                <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                  <h3>Terminación en disputa</h3>
+                  <p>
+                    La terminación fue disputada y requiere revisión antes de
+                    liberar o devolver fondos.
+                  </p>
+
+                  {job.terminationRequest.resolutionNotes && (
+                    <p>
+                      <strong>Motivo de la disputa:</strong>{' '}
+                      {job.terminationRequest.resolutionNotes}
+                    </p>
                   )}
                 </div>
               )}

@@ -647,7 +647,14 @@ export class JobRequestsController {
     return this.prisma.jobRequest.findMany({
       where: {
         status: {
-          in: ['ASSIGNED', 'IN_PROGRESS', 'AWAITING_CLIENT_CONFIRMATION', 'COMPLETED']
+          in: [
+            'ASSIGNED',
+            'IN_PROGRESS',
+            'AWAITING_CLIENT_CONFIRMATION',
+            'TERMINATION_REQUESTED',
+            'DISPUTED',
+            'COMPLETED'
+          ]
         },
         proposals: {
           some: {
@@ -659,6 +666,7 @@ export class JobRequestsController {
       include: {
         category: true,
         specialistReview: true,
+        terminationRequest: true,
         client: {
           select: {
             user: {
@@ -2212,6 +2220,7 @@ export class JobRequestsController {
       include: {
         category: true,
         review: true,
+        terminationRequest: true,
         proposals: {
           where: {
             status: 'ACCEPTED'
