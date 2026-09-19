@@ -613,8 +613,7 @@ export default function MisSolicitudes() {
             )}
 
             {['DRAFT', 'PUBLISHED'].includes(job.status) && (
-              <>
-              {editingJobId === job.id ? (
+              editingJobId === job.id ? (
                 <div style={{ marginBottom: '12px' }}>
                   <h4>Editar solicitud</h4>
 
@@ -703,8 +702,10 @@ export default function MisSolicitudes() {
                 >
                   Editar solicitud
                 </button>
-              )}
+              )
+            )}
 
+            {['DRAFT', 'PUBLISHED', 'RECEIVING_QUOTES'].includes(job.status) && (
               <button
                 type="button"
                 onClick={() => cancelJob(job.id)}
@@ -712,7 +713,6 @@ export default function MisSolicitudes() {
               >
                 Cancelar solicitud
               </button>
-              </>
             )}
 
             <button
