@@ -13,6 +13,13 @@ export default function MisSolicitudes() {
   const [submittingReview, setSubmittingReview] = useState<string | null>(null);
   const [processingPayment, setProcessingPayment] = useState<string | null>(null);
   const [confirmingCompletion, setConfirmingCompletion] = useState<string | null>(null);
+  const [terminationJobId, setTerminationJobId] = useState<string | null>(null);
+  const [submittingTermination, setSubmittingTermination] = useState<string | null>(null);
+  const [terminationDraft, setTerminationDraft] = useState({
+    reasonCode: '',
+    reasonDetails: '',
+    claimedLiability: ''
+  });
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
   const [openChatJobId, setOpenChatJobId] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<Record<string, any[]>>({});
@@ -328,6 +335,67 @@ export default function MisSolicitudes() {
       setItems(updated);
     } catch (e: any) {
       setError(e.message || 'No se pudo cancelar la solicitud.');
+    }
+  }
+
+  function startTermination(jobId: string) {
+    setTerminationJobId(jobId);
+    setTerminationDraft({
+      reasonCode: '',
+      reasonDetails: '',
+      claimedLiability: ''
+    });
+    setError('');
+  }
+
+  function cancelTermination() {
+    setTerminationJobId(null);
+    setTerminationDraft({
+      reasonCode: '',
+      reasonDetails: '',
+      claimedLiability: ''
+    });
+  }
+
+  async function submitTermination(job: any) {
+    if (!terminationDraft.reasonCode.trim()) {
+      setError('Debes indicar la causa de la terminación.');
+      return;
+    }
+
+    if (
+      job.status === 'IN_PROGRESS' &&
+      !terminationDraft.claimedLiability
+    ) {
+      setError('Debes indicar a quién atribuyes la responsabilidad.');
+      return;
+    }
+
+    setError('');
+    setSubmittingTermination(job.id);
+
+    try {
+      const body: any = {
+        reasonCode: terminationDraft.reasonCode.trim(),
+        reasonDetails: terminationDraft.reasonDetails.trim() || null
+      };
+
+      if (job.status === 'IN_PROGRESS') {
+        body.claimedLiability = terminationDraft.claimedLiability;
+      }
+
+      await api(`/job-requests/${job.id}/termination-request`, {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+
+      const updated = await api('/job-requests/me');
+      setItems(updated);
+      cancelTermination();
+    } catch (e: any) {
+      setError(e.message || 'No se pudo solicitar la terminación.');
+    } finally {
+      setSubmittingTermination(null);
     }
   }
 
