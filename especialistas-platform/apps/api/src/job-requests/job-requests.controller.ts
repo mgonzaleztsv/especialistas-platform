@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('job-requests')
@@ -1597,6 +1598,288 @@ export class JobRequestsController {
         type: type as 'RESTITUTION' | 'COMPENSATION' | 'BOTH',
         description,
         claimedAmount
+      }
+    });
+  }
+
+  @Post(':id/damage-claims/:claimId/accept')
+  async acceptDamageClaim(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Param('claimId') claimId: string,
+    @Body() body: any
+  ) {
+    const responseNotes = body.responseNotes
+      ? String(body.responseNotes).trim()
+      : null;
+
+    const claim = await this.prisma.damageClaim.findUnique({
+      where: { id: claimId },
+      include: {
+        terminationRequest: {
+          include: {
+            jobRequest: {
+              include: {
+                client: true,
+                proposals: {
+                  where: { status: 'ACCEPTED' },
+                  include: {
+                    specialist: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!claim) {
+      throw new Error('La reclamación de daños no existe');
+    }
+
+    const jobRequest = claim.terminationRequest.jobRequest;
+
+    if (jobRequest.id !== jobRequestId) {
+      throw new Error(
+        'La reclamación no corresponde a este trabajo'
+      );
+    }
+
+    if (claim.status !== 'PENDING') {
+      throw new Error(
+        'Esta reclamación ya fue respondida'
+      );
+    }
+
+    const acceptedProposal = jobRequest.proposals[0];
+
+    if (!acceptedProposal) {
+      throw new Error('No se encontró al especialista contratado');
+    }
+
+    const isClient =
+      jobRequest.client.userId === req.user.userId;
+
+    const isSpecialist =
+      acceptedProposal.specialist.userId === req.user.userId;
+
+    if (
+      claim.claimedAgainst === 'CLIENT' &&
+      !isClient
+    ) {
+      throw new Error(
+        'Solo el cliente reclamado puede aceptar esta reclamación'
+      );
+    }
+
+    if (
+      claim.claimedAgainst === 'SPECIALIST' &&
+      !isSpecialist
+    ) {
+      throw new Error(
+        'Solo el especialista reclamado puede aceptar esta reclamación'
+      );
+    }
+
+    return this.prisma.damageClaim.update({
+      where: { id: claim.id },
+      data: {
+        status: 'ACCEPTED',
+        approvedAmount: claim.claimedAmount,
+        resolutionNotes:
+          responseNotes || 'Reclamación aceptada por la parte responsable'
+      }
+    });
+  }
+
+  @Post(':id/damage-claims/:claimId/dispute')
+  async disputeDamageClaim(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Param('claimId') claimId: string,
+    @Body() body: any
+  ) {
+    const responseNotes = String(
+      body.responseNotes || ''
+    ).trim();
+
+    if (!responseNotes) {
+      throw new Error(
+        'Debes indicar por qué disputas la reclamación'
+      );
+    }
+
+    const claim = await this.prisma.damageClaim.findUnique({
+      where: { id: claimId },
+      include: {
+        terminationRequest: {
+          include: {
+            jobRequest: {
+              include: {
+                client: true,
+                proposals: {
+                  where: { status: 'ACCEPTED' },
+                  include: {
+                    specialist: true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!claim) {
+      throw new Error('La reclamación de daños no existe');
+    }
+
+    const jobRequest = claim.terminationRequest.jobRequest;
+
+    if (jobRequest.id !== jobRequestId) {
+      throw new Error(
+        'La reclamación no corresponde a este trabajo'
+      );
+    }
+
+    if (claim.status !== 'PENDING') {
+      throw new Error(
+        'Esta reclamación ya fue respondida'
+      );
+    }
+
+    const acceptedProposal = jobRequest.proposals[0];
+
+    if (!acceptedProposal) {
+      throw new Error('No se encontró al especialista contratado');
+    }
+
+    const isClient =
+      jobRequest.client.userId === req.user.userId;
+
+    const isSpecialist =
+      acceptedProposal.specialist.userId === req.user.userId;
+
+    if (
+      claim.claimedAgainst === 'CLIENT' &&
+      !isClient
+    ) {
+      throw new Error(
+        'Solo el cliente reclamado puede disputar esta reclamación'
+      );
+    }
+
+    if (
+      claim.claimedAgainst === 'SPECIALIST' &&
+      !isSpecialist
+    ) {
+      throw new Error(
+        'Solo el especialista reclamado puede disputar esta reclamación'
+      );
+    }
+
+    return this.prisma.damageClaim.update({
+      where: { id: claim.id },
+      data: {
+        status: 'DISPUTED',
+        approvedAmount: null,
+        resolutionNotes: responseNotes
+      }
+    });
+  }
+
+  @Post(':id/damage-claims/:claimId/resolve')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async resolveDamageClaim(
+    @Param('id') jobRequestId: string,
+    @Param('claimId') claimId: string,
+    @Body() body: any
+  ) {
+    const claim = await this.prisma.damageClaim.findUnique({
+      where: { id: claimId },
+      include: {
+        terminationRequest: {
+          include: { jobRequest: true }
+        }
+      }
+    });
+
+    if (!claim) throw new Error('La reclamación no existe');
+
+    if (claim.terminationRequest.jobRequest.id !== jobRequestId) {
+      throw new Error('La reclamación no corresponde a este trabajo');
+    }
+
+    if (!['ACCEPTED', 'DISPUTED'].includes(claim.status)) {
+      throw new Error('La reclamación no está lista para resolución');
+    }
+
+    const decision = String(body.decision || '').toUpperCase();
+    const notes = String(body.resolutionNotes || '').trim();
+
+    if (!notes) throw new Error('Debes indicar las notas de resolución');
+
+    if (decision === 'REJECTED') {
+      return this.prisma.damageClaim.update({
+        where: { id: claim.id },
+        data: {
+          status: 'REJECTED',
+          approvedAmount: null,
+          coverageSource: 'UNDETERMINED',
+          insuranceReference: null,
+          resolutionNotes: notes,
+          resolvedAt: new Date()
+        }
+      });
+    }
+
+    if (decision !== 'RESOLVED') {
+      throw new Error('La decisión debe ser RESOLVED o REJECTED');
+    }
+
+    const amount =
+      body.approvedAmount !== undefined
+        ? Number(body.approvedAmount)
+        : claim.approvedAmount !== null
+          ? Number(claim.approvedAmount)
+          : null;
+
+    if (
+      ['COMPENSATION', 'BOTH'].includes(claim.type) &&
+      (!amount || amount <= 0)
+    ) {
+      throw new Error('Debes indicar un monto aprobado mayor que cero');
+    }
+
+    const coverage = String(body.coverageSource || '').toUpperCase();
+
+    if (
+      !['RESPONSIBLE_PARTY', 'PLATFORM_INSURANCE', 'PLATFORM'].includes(coverage)
+    ) {
+      throw new Error('Fuente de cobertura no válida');
+    }
+
+    const insuranceReference = body.insuranceReference
+      ? String(body.insuranceReference).trim()
+      : null;
+
+    if (coverage === 'PLATFORM_INSURANCE' && !insuranceReference) {
+      throw new Error('Debes indicar la referencia del seguro');
+    }
+
+    return this.prisma.damageClaim.update({
+      where: { id: claim.id },
+      data: {
+        status: 'RESOLVED',
+        approvedAmount: amount,
+        coverageSource: coverage as
+          | 'RESPONSIBLE_PARTY'
+          | 'PLATFORM_INSURANCE'
+          | 'PLATFORM',
+        insuranceReference,
+        resolutionNotes: notes,
+        resolvedAt: new Date()
       }
     });
   }
