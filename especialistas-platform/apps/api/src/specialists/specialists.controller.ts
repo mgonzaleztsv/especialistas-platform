@@ -195,6 +195,7 @@ export class SpecialistsController {
     });
   }
 
+  @UseGuards(JwtAuthGuard)
   @Delete('me/portfolio/:itemId')
   async deletePortfolioItem(
     @Req() req: any,

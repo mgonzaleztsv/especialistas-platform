@@ -17,6 +17,7 @@ export default function TrabajosDisponibles() {
   });
 
   const [success, setSuccess] = useState('');
+  const [confirmingWithdrawalId, setConfirmingWithdrawalId] = useState<string | null>(null);
 
   useEffect(() => {
     api('/job-requests/available')
@@ -122,13 +123,18 @@ export default function TrabajosDisponibles() {
     }
   }
 
-  async function withdrawProposal(jobId: string, proposalId: string) {
-    const confirmed = window.confirm(
-      '¿Seguro que quieres retirar esta propuesta?'
-    );
+  async function withdrawProposal(
+    jobId: string,
+    proposalId: string,
+    confirmed = false
+  ) {
+    if (!confirmed) {
+      setConfirmingWithdrawalId(proposalId);
+      setError('');
+      return;
+    }
 
-    if (!confirmed) return;
-
+    setConfirmingWithdrawalId(null);
     setError('');
     setSuccess('');
 
@@ -234,6 +240,47 @@ export default function TrabajosDisponibles() {
                 >
                   Retirar propuesta
                 </button>
+
+                {confirmingWithdrawalId === job.proposals[0].id && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <p style={{ marginTop: 0 }}>
+                      <strong>Confirmar retiro</strong>
+                    </p>
+
+                    <p>
+                      Esta propuesta quedará retirada y ya no podrá ser
+                      aceptada por el cliente.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        withdrawProposal(
+                          job.id,
+                          job.proposals[0].id,
+                          true
+                        )
+                      }
+                    >
+                      Confirmar retiro
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingWithdrawalId(null)}
+                      style={{ marginTop: '8px' }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
               </div>
             ) : job.proposals?.[0]?.status === 'WITHDRAWN' &&
             editingProposalId !== job.proposals?.[0]?.id ? (

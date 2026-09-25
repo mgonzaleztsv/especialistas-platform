@@ -8,6 +8,11 @@ export default function AdminVerificaciones() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [confirmingDocument, setConfirmingDocument] = useState<{
+    id: string;
+    action: 'verify' | 'reject';
+  } | null>(null);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
   async function loadDocuments() {
     setLoading(true);
@@ -29,16 +34,20 @@ export default function AdminVerificaciones() {
 
   async function reviewDocument(
     documentId: string,
-    action: 'verify' | 'reject'
+    action: 'verify' | 'reject',
+    confirmed = false
   ) {
-    const confirmed = window.confirm(
-      action === 'verify'
-        ? '¿Aprobar este documento?'
-        : '¿Rechazar este documento?'
-    );
+    if (!confirmed) {
+      setConfirmingDocument({
+        id: documentId,
+        action
+      });
+      setError('');
+      return;
+    }
 
-    if (!confirmed) return;
-
+    setConfirmingDocument(null);
+    setUpdatingId(documentId);
     setError('');
     setMessage('');
 
@@ -61,6 +70,8 @@ export default function AdminVerificaciones() {
       );
     } catch (e: any) {
       setError(e.message || 'No se pudo revisar el documento.');
+    } finally {
+      setUpdatingId(null);
     }
   }
 
@@ -132,6 +143,7 @@ export default function AdminVerificaciones() {
                 onClick={() =>
                   reviewDocument(document.id, 'verify')
                 }
+                disabled={updatingId === document.id}
               >
                 Aprobar
               </button>
@@ -141,10 +153,65 @@ export default function AdminVerificaciones() {
                 onClick={() =>
                   reviewDocument(document.id, 'reject')
                 }
+                disabled={updatingId === document.id}
                 style={{ marginTop: '8px' }}
               >
                 Rechazar
               </button>
+
+              {confirmingDocument?.id === document.id && (
+                <div
+                  style={{
+                    marginTop: '12px',
+                    padding: '14px',
+                    border: '1px solid #ddd',
+                    borderRadius: '10px'
+                  }}
+                >
+                  <p style={{ marginTop: 0 }}>
+                    <strong>
+                      {confirmingDocument?.action === 'verify'
+                        ? 'Confirmar aprobación'
+                        : 'Confirmar rechazo'}
+                    </strong>
+                  </p>
+
+                  <p>
+                    {confirmingDocument?.action === 'verify'
+                      ? '¿Deseas aprobar este documento?'
+                      : '¿Deseas rechazar este documento?'}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!confirmingDocument) return;
+
+                      reviewDocument(
+                        document.id,
+                        confirmingDocument.action,
+                        true
+                      );
+                    }}
+                    disabled={updatingId === document.id}
+                  >
+                    {updatingId === document.id
+                      ? 'Procesando...'
+                      : confirmingDocument?.action === 'verify'
+                        ? 'Confirmar aprobación'
+                        : 'Confirmar rechazo'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDocument(null)}
+                    disabled={updatingId === document.id}
+                    style={{ marginTop: '8px' }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              )}
             </div>
           ))
         )}

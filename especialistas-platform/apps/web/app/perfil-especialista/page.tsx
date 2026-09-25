@@ -37,6 +37,7 @@ export default function PerfilEspecialista() {
   });
   const [portfolioMessage, setPortfolioMessage] = useState('');
   const [editingPortfolioId, setEditingPortfolioId] = useState<string | null>(null);
+  const [confirmingPortfolioDeleteId, setConfirmingPortfolioDeleteId] = useState<string | null>(null);
   const [portfolioEditDraft, setPortfolioEditDraft] = useState({
     title: '',
     description: '',
@@ -249,13 +250,17 @@ export default function PerfilEspecialista() {
     }
   }
 
-  async function deletePortfolioItem(itemId: string) {
-    const confirmed = window.confirm(
-      '¿Seguro que quieres eliminar este trabajo del portafolio?'
-    );
+  async function deletePortfolioItem(
+    itemId: string,
+    confirmed = false
+  ) {
+    if (!confirmed) {
+      setConfirmingPortfolioDeleteId(itemId);
+      setError('');
+      return;
+    }
 
-    if (!confirmed) return;
-
+    setConfirmingPortfolioDeleteId(null);
     setError('');
     setPortfolioMessage('');
 
@@ -634,6 +639,40 @@ export default function PerfilEspecialista() {
                     >
                       Eliminar
                     </button>
+
+                    {confirmingPortfolioDeleteId === item.id && (
+                      <div
+                        style={{
+                          marginTop: '12px',
+                          padding: '14px',
+                          border: '1px solid #ddd',
+                          borderRadius: '10px'
+                        }}
+                      >
+                        <p style={{ marginTop: 0 }}>
+                          <strong>Confirmar eliminación</strong>
+                        </p>
+
+                        <p>
+                          Este trabajo se eliminará de tu portafolio.
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() => deletePortfolioItem(item.id, true)}
+                        >
+                          Confirmar eliminación
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingPortfolioDeleteId(null)}
+                          style={{ marginTop: '8px' }}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

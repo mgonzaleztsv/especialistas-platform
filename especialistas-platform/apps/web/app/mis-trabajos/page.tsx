@@ -8,6 +8,7 @@ export default function MisTrabajos() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [confirmingTerminationAcceptance, setConfirmingTerminationAcceptance] = useState<string | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rating: string; comment: string }>>({});
   const [submittingReview, setSubmittingReview] = useState<string | null>(null);
   const [openChatJobId, setOpenChatJobId] = useState<string | null>(null);
@@ -16,6 +17,10 @@ export default function MisTrabajos() {
   const [loadingChat, setLoadingChat] = useState<string | null>(null);
   const [sendingChat, setSendingChat] = useState<string | null>(null);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [terminationDisputeJobId, setTerminationDisputeJobId] = useState<string | null>(null);
+  const [terminationDisputeDrafts, setTerminationDisputeDrafts] = useState<Record<string, string>>({});
+  const [damageClaimDisputeId, setDamageClaimDisputeId] = useState<string | null>(null);
+  const [damageClaimDisputeDrafts, setDamageClaimDisputeDrafts] = useState<Record<string, string>>({});
 
   function cargarTrabajos() {
     setLoading(true);
@@ -167,13 +172,17 @@ export default function MisTrabajos() {
     }
   }
 
-  async function aceptarTerminacion(jobId: string) {
-    const confirmed = window.confirm(
-      '¿Aceptas la terminación anticipada? Esta decisión puede generar pagos, reembolsos o penalizaciones según la etapa del trabajo.'
-    );
+  async function aceptarTerminacion(
+    jobId: string,
+    confirmed = false
+  ) {
+    if (!confirmed) {
+      setConfirmingTerminationAcceptance(jobId);
+      setError('');
+      return;
+    }
 
-    if (!confirmed) return;
-
+    setConfirmingTerminationAcceptance(null);
     setUpdatingId(jobId);
     setError('');
 
@@ -191,11 +200,7 @@ export default function MisTrabajos() {
   }
 
   async function disputarTerminacion(jobId: string) {
-    const reason = window.prompt(
-      'Indica brevemente por qué disputas la terminación:'
-    );
-
-    if (reason === null) return;
+    const reason = terminationDisputeDrafts[jobId] || '';
 
     if (!reason.trim()) {
       setError('Debes indicar el motivo de la disputa.');
@@ -213,9 +218,67 @@ export default function MisTrabajos() {
         })
       });
 
+      setTerminationDisputeJobId(null);
+      setTerminationDisputeDrafts((prev) => ({
+        ...prev,
+        [jobId]: ''
+      }));
+
       cargarTrabajos();
     } catch (e: any) {
       setError(e.message || 'No se pudo disputar la terminación.');
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function aceptarReclamacion(jobId: string, claimId: string) {
+    setUpdatingId(claimId);
+    setError('');
+
+    try {
+      await api(`/job-requests/${jobId}/damage-claims/${claimId}/accept`, {
+        method: 'POST',
+        body: JSON.stringify({
+          responseNotes: 'Reclamación aceptada por el especialista.'
+        })
+      });
+      cargarTrabajos();
+    } catch (e: any) {
+      setError(e.message || 'No se pudo aceptar la reclamación.');
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  async function disputarReclamacion(jobId: string, claimId: string) {
+    const reason = damageClaimDisputeDrafts[claimId] || '';
+
+    if (!reason.trim()) {
+      setError('Debes indicar el motivo de la disputa.');
+      return;
+    }
+
+    setUpdatingId(claimId);
+    setError('');
+
+    try {
+      await api(`/job-requests/${jobId}/damage-claims/${claimId}/dispute`, {
+        method: 'POST',
+        body: JSON.stringify({
+          responseNotes: reason.trim()
+        })
+      });
+
+      setDamageClaimDisputeId(null);
+      setDamageClaimDisputeDrafts((prev) => ({
+        ...prev,
+        [claimId]: ''
+      }));
+
+      cargarTrabajos();
+    } catch (e: any) {
+      setError(e.message || 'No se pudo disputar la reclamación.');
     } finally {
       setUpdatingId(null);
     }
@@ -228,6 +291,23 @@ export default function MisTrabajos() {
     if (status === 'TERMINATION_REQUESTED') return 'Terminación solicitada';
     if (status === 'DISPUTED') return 'Terminación en disputa';
     if (status === 'COMPLETED') return 'Completado';
+    if (status === 'CANCELLED') return 'Cancelado';
+    return status;
+  }
+
+  function tipoReclamacion(type: string) {
+    if (type === 'RESTITUTION') return 'Restitución';
+    if (type === 'COMPENSATION') return 'Compensación';
+    if (type === 'BOTH') return 'Restitución y compensación';
+    return type;
+  }
+
+  function estadoReclamacion(status: string) {
+    if (status === 'PENDING') return 'Pendiente';
+    if (status === 'ACCEPTED') return 'Aceptada';
+    if (status === 'DISPUTED') return 'En disputa';
+    if (status === 'RESOLVED') return 'Resuelta';
+    if (status === 'REJECTED') return 'Rechazada';
     return status;
   }
 
@@ -438,14 +518,134 @@ export default function MisTrabajos() {
                         Aceptar terminación
                       </button>
 
+                      {confirmingTerminationAcceptance === job.id && (
+                        <div
+                          style={{
+                            marginTop: '12px',
+                            padding: '14px',
+                            border: '1px solid #ddd',
+                            borderRadius: '10px'
+                          }}
+                        >
+                          <p style={{ marginTop: 0 }}>
+                            <strong>Confirmar aceptación</strong>
+                          </p>
+
+                          <p>
+                            Esta decisión puede generar pagos, reembolsos o
+                            penalizaciones según la etapa del trabajo.
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              aceptarTerminacion(job.id, true)
+                            }
+                            disabled={updatingId === job.id}
+                          >
+                            {updatingId === job.id
+                              ? 'Procesando...'
+                              : 'Confirmar aceptación'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setConfirmingTerminationAcceptance(null)
+                            }
+                            disabled={updatingId === job.id}
+                            style={{ marginTop: '8px' }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      )}
+
                       <button
                         type="button"
-                        onClick={() => disputarTerminacion(job.id)}
+                        onClick={() =>
+                          setTerminationDisputeJobId(
+                            terminationDisputeJobId === job.id
+                              ? null
+                              : job.id
+                          )
+                        }
                         disabled={updatingId === job.id}
                         style={{ marginTop: '8px' }}
                       >
                         Disputar terminación
                       </button>
+
+                      {terminationDisputeJobId === job.id && (
+                        <div
+                          style={{
+                            marginTop: '12px',
+                            padding: '14px',
+                            border: '1px solid #ddd',
+                            borderRadius: '10px'
+                          }}
+                        >
+                          <label
+                            htmlFor={`termination-dispute-${job.id}`}
+                            style={{
+                              display: 'block',
+                              fontWeight: 600,
+                              marginBottom: '8px'
+                            }}
+                          >
+                            Motivo de la disputa
+                          </label>
+
+                          <textarea
+                            id={`termination-dispute-${job.id}`}
+                            value={
+                              terminationDisputeDrafts[job.id] || ''
+                            }
+                            onChange={(e) =>
+                              setTerminationDisputeDrafts((prev) => ({
+                                ...prev,
+                                [job.id]: e.target.value
+                              }))
+                            }
+                            placeholder="Explica brevemente por qué no estás de acuerdo con la terminación."
+                            rows={5}
+                            style={{
+                              width: '100%',
+                              minHeight: '110px',
+                              padding: '10px',
+                              boxSizing: 'border-box',
+                              fontSize: '16px',
+                              resize: 'vertical'
+                            }}
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => disputarTerminacion(job.id)}
+                            disabled={updatingId === job.id}
+                            style={{ marginTop: '10px' }}
+                          >
+                            {updatingId === job.id
+                              ? 'Enviando...'
+                              : 'Enviar disputa'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTerminationDisputeJobId(null);
+                              setTerminationDisputeDrafts((prev) => ({
+                                ...prev,
+                                [job.id]: ''
+                              }));
+                            }}
+                            disabled={updatingId === job.id}
+                            style={{ marginTop: '8px' }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <p>Esperando respuesta del cliente.</p>
@@ -461,12 +661,255 @@ export default function MisTrabajos() {
                     liberar o devolver fondos.
                   </p>
 
-                  {job.terminationRequest.resolutionNotes && (
+                  {job.terminationRequest.disputeNotes && (
                     <p>
                       <strong>Motivo de la disputa:</strong>{' '}
+                      {job.terminationRequest.disputeNotes}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {job.terminationRequest?.status === 'RESOLVED' && (
+                <div
+                  style={{
+                    marginTop: '16px',
+                    marginBottom: '16px',
+                    border: '1px solid #ddd',
+                    borderRadius: '10px',
+                    padding: '14px'
+                  }}
+                >
+                  <h3>Terminación resuelta</h3>
+
+                  <p>
+                    <strong>Responsabilidad final:</strong>{' '}
+                    {job.terminationRequest.liability === 'CLIENT'
+                      ? 'Cliente'
+                      : job.terminationRequest.liability === 'SPECIALIST'
+                        ? 'Especialista'
+                        : job.terminationRequest.liability === 'NONE'
+                          ? 'Ninguna'
+                          : 'No determinada'}
+                  </p>
+
+                  <p>
+                    <strong>Pago al especialista:</strong> $
+                    {Number(
+                      job.terminationRequest.specialistPayoutAmount || 0
+                    ).toFixed(2)}
+                  </p>
+
+                  <p>
+                    <strong>Reembolso al cliente:</strong> $
+                    {Number(
+                      job.terminationRequest.clientRefundAmount || 0
+                    ).toFixed(2)}
+                  </p>
+
+                  <p>
+                    <strong>Penalización:</strong> $
+                    {Number(
+                      job.terminationRequest.penaltyAmount || 0
+                    ).toFixed(2)}
+                  </p>
+
+                  {job.terminationRequest.resolutionNotes && (
+                    <p>
+                      <strong>Resolución administrativa:</strong>{' '}
                       {job.terminationRequest.resolutionNotes}
                     </p>
                   )}
+
+                  {job.terminationRequest.resolvedAt && (
+                    <p>
+                      <strong>Fecha de resolución:</strong>{' '}
+                      {new Date(
+                        job.terminationRequest.resolvedAt
+                      ).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {!!job.terminationRequest?.damageClaims?.length && (
+                <div style={{ marginTop: '16px', marginBottom: '16px' }}>
+                  <h3>Reclamaciones de daños</h3>
+
+                  {job.terminationRequest.damageClaims.map((claim: any) => (
+                    <div
+                      key={claim.id}
+                      style={{
+                        border: '1px solid #ddd',
+                        borderRadius: '10px',
+                        padding: '14px',
+                        marginBottom: '12px'
+                      }}
+                    >
+                      <details
+                        open={
+                          claim.status === 'PENDING' ||
+                          claim.status === 'DISPUTED'
+                        }
+                      >
+                        <summary
+                          style={{
+                            cursor: 'pointer',
+                            fontWeight: 600
+                          }}
+                        >
+                          {tipoReclamacion(claim.type)} ·{' '}
+                          {estadoReclamacion(claim.status)}
+                          {claim.createdAt
+                            ? ` · ${new Date(
+                                claim.createdAt
+                              ).toLocaleDateString()}`
+                            : ''}
+                        </summary>
+
+                        <div style={{ marginTop: '14px' }}>
+                          <p>
+                            <strong>Tipo:</strong>{' '}
+                            {tipoReclamacion(claim.type)}
+                          </p>
+
+                          <p>
+                            <strong>Estado:</strong>{' '}
+                            {estadoReclamacion(claim.status)}
+                          </p>
+
+                          <p>
+                            <strong>Descripción:</strong>{' '}
+                            {claim.description}
+                          </p>
+
+                          {claim.claimedAmount !== null && (
+                            <p>
+                              <strong>Monto reclamado:</strong> $
+                              {Number(claim.claimedAmount).toFixed(2)}
+                            </p>
+                          )}
+
+                          {claim.approvedAmount !== null && (
+                            <p>
+                              <strong>Monto aprobado:</strong> $
+                              {Number(claim.approvedAmount).toFixed(2)}
+                            </p>
+                          )}
+
+                          {claim.resolutionNotes && (
+                            <p>
+                              <strong>Respuesta o resolución:</strong>{' '}
+                              {claim.resolutionNotes}
+                            </p>
+                          )}
+                        </div>
+                      </details>
+
+                      {claim.status === 'PENDING' &&
+                        claim.claimedAgainst === 'SPECIALIST' && (
+                          <div style={{ marginTop: '12px' }}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                aceptarReclamacion(job.id, claim.id)
+                              }
+                              disabled={updatingId === claim.id}
+                            >
+                              Aceptar reclamación
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setDamageClaimDisputeId(
+                                  damageClaimDisputeId === claim.id
+                                    ? null
+                                    : claim.id
+                                )
+                              }
+                              disabled={updatingId === claim.id}
+                              style={{ marginTop: '8px' }}
+                            >
+                              Disputar reclamación
+                            </button>
+
+                            {damageClaimDisputeId === claim.id && (
+                              <div
+                                style={{
+                                  marginTop: '12px',
+                                  padding: '14px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '10px'
+                                }}
+                              >
+                                <label
+                                  htmlFor={`damage-claim-dispute-${claim.id}`}
+                                  style={{
+                                    display: 'block',
+                                    fontWeight: 600,
+                                    marginBottom: '8px'
+                                  }}
+                                >
+                                  Motivo de la disputa
+                                </label>
+
+                                <textarea
+                                  id={`damage-claim-dispute-${claim.id}`}
+                                  value={
+                                    damageClaimDisputeDrafts[claim.id] || ''
+                                  }
+                                  onChange={(e) =>
+                                    setDamageClaimDisputeDrafts((prev) => ({
+                                      ...prev,
+                                      [claim.id]: e.target.value
+                                    }))
+                                  }
+                                  placeholder="Explica por qué no estás de acuerdo con esta reclamación."
+                                  rows={5}
+                                  style={{
+                                    width: '100%',
+                                    minHeight: '110px',
+                                    padding: '10px',
+                                    boxSizing: 'border-box',
+                                    fontSize: '16px',
+                                    resize: 'vertical'
+                                  }}
+                                />
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    disputarReclamacion(job.id, claim.id)
+                                  }
+                                  disabled={updatingId === claim.id}
+                                  style={{ marginTop: '10px' }}
+                                >
+                                  {updatingId === claim.id
+                                    ? 'Enviando...'
+                                    : 'Enviar disputa'}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDamageClaimDisputeId(null);
+                                    setDamageClaimDisputeDrafts((prev) => ({
+                                      ...prev,
+                                      [claim.id]: ''
+                                    }));
+                                  }}
+                                  disabled={updatingId === claim.id}
+                                  style={{ marginTop: '8px' }}
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                    </div>
+                  ))}
                 </div>
               )}
 

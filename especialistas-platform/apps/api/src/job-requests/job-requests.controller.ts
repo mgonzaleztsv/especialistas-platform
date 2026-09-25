@@ -530,11 +530,20 @@ export class JobRequestsController {
             status: 'ACCEPTED'
           }
         }
+      },
+      include: {
+        payment: true
       }
     });
 
     if (!jobRequest) {
       throw new Error('El trabajo no está asignado a este especialista o no puede iniciarse');
+    }
+
+    if (!jobRequest.payment || jobRequest.payment.status !== 'PAID') {
+      throw new Error(
+        'El trabajo no puede iniciarse hasta que el pago esté confirmado'
+      );
     }
 
     return this.prisma.jobRequest.update({
@@ -653,6 +662,7 @@ export class JobRequestsController {
             'AWAITING_CLIENT_CONFIRMATION',
             'TERMINATION_REQUESTED',
             'DISPUTED',
+            'CANCELLED',
             'COMPLETED'
           ]
         },
@@ -666,7 +676,9 @@ export class JobRequestsController {
       include: {
         category: true,
         specialistReview: true,
-        terminationRequest: true,
+        terminationRequest: {
+          include: { damageClaims: true }
+        },
         client: {
           select: {
             user: {
@@ -1336,7 +1348,9 @@ export class JobRequestsController {
         : totalAmount;
 
     const penaltyAmount =
-      Math.round(totalAmount * 0.10 * 100) / 100;
+      termination.requesterRole === 'SPECIALIST'
+        ? Math.round(totalAmount * 0.10 * 100) / 100
+        : 0;
 
     return this.prisma.$transaction(async (tx) => {
       const movements =
@@ -1428,7 +1442,7 @@ export class JobRequestsController {
     @Param('id') jobRequestId: string,
     @Body() body: any
   ) {
-    const resolutionNotes = body.reasonDetails
+    const disputeNotes = body.reasonDetails
       ? String(body.reasonDetails).trim()
       : null;
 
@@ -1483,7 +1497,8 @@ export class JobRequestsController {
         where: { id: termination.id },
         data: {
           status: 'DISPUTED',
-          resolutionNotes,
+          disputeNotes,
+          resolutionNotes: null,
           respondedAt: new Date()
         }
       });
@@ -1494,6 +1509,368 @@ export class JobRequestsController {
       });
 
       return updatedTermination;
+    });
+  }
+
+  @Get('admin/termination-requests')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async getAdminTerminationRequests() {
+    const terminations = await this.prisma.terminationRequest.findMany({
+      where: {
+        status: {
+          in: ['DISPUTED', 'RESOLVED']
+        }
+      },
+      include: {
+        requestedBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true
+          }
+        },
+        jobRequest: {
+          include: {
+            client: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true
+                  }
+                }
+              }
+            },
+            payment: true,
+            proposals: {
+              where: {
+                status: 'ACCEPTED'
+              },
+              take: 1,
+              include: {
+                specialist: {
+                  include: {
+                    user: {
+                      select: {
+                        id: true,
+                        name: true,
+                        email: true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        updatedAt: 'desc'
+      }
+    });
+
+    return terminations.map((termination) => {
+      const jobRequest = termination.jobRequest;
+      const acceptedProposal = jobRequest.proposals[0];
+
+      return {
+        id: termination.id,
+        requesterRole: termination.requesterRole,
+        jobStatusAtRequest: termination.jobStatusAtRequest,
+        reasonCode: termination.reasonCode,
+        reasonDetails: termination.reasonDetails,
+        status: termination.status,
+        claimedLiability: termination.claimedLiability,
+        liability: termination.liability,
+
+        specialistPayoutAmount:
+          termination.specialistPayoutAmount !== null
+            ? Number(termination.specialistPayoutAmount)
+            : null,
+
+        clientRefundAmount:
+          termination.clientRefundAmount !== null
+            ? Number(termination.clientRefundAmount)
+            : null,
+
+        penaltyAmount:
+          termination.penaltyAmount !== null
+            ? Number(termination.penaltyAmount)
+            : null,
+
+        disputeNotes: termination.disputeNotes,
+        resolutionNotes: termination.resolutionNotes,
+        respondedAt: termination.respondedAt,
+        resolvedAt: termination.resolvedAt,
+        createdAt: termination.createdAt,
+
+        requestedBy: termination.requestedBy,
+
+        jobRequest: {
+          id: jobRequest.id,
+          title: jobRequest.title,
+          status: jobRequest.status,
+          city: jobRequest.city,
+          state: jobRequest.state,
+
+          client: {
+            id: jobRequest.client.id,
+            name: jobRequest.client.user.name,
+            email: jobRequest.client.user.email
+          },
+
+          specialist: acceptedProposal
+            ? {
+                id: acceptedProposal.specialist.id,
+                name: acceptedProposal.specialist.user.name,
+                email: acceptedProposal.specialist.user.email
+              }
+            : null,
+
+          payment: jobRequest.payment
+            ? {
+                id: jobRequest.payment.id,
+                amount: Number(jobRequest.payment.amount),
+                currency: jobRequest.payment.currency,
+                status: jobRequest.payment.status
+              }
+            : null
+        }
+      };
+    });
+  }
+
+  @Post(':id/termination-request/resolve')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async resolveTerminationByAdmin(
+    @Param('id') jobRequestId: string,
+    @Body() body: any
+  ) {
+    const jobRequest = await this.prisma.jobRequest.findUnique({
+      where: { id: jobRequestId },
+      include: {
+        payment: true,
+        terminationRequest: true
+      }
+    });
+
+    if (
+      !jobRequest ||
+      !jobRequest.terminationRequest ||
+      jobRequest.status !== 'DISPUTED' ||
+      jobRequest.terminationRequest.status !== 'DISPUTED'
+    ) {
+      throw new Error(
+        'No existe una terminación disputada pendiente de resolución'
+      );
+    }
+
+    const termination = jobRequest.terminationRequest;
+
+    const liability = String(
+      body.liability || ''
+    ).trim().toUpperCase();
+
+    if (!['CLIENT', 'SPECIALIST', 'NONE'].includes(liability)) {
+      throw new Error(
+        'Debes indicar la responsabilidad final: CLIENT, SPECIALIST o NONE'
+      );
+    }
+
+    const resolutionNotes = String(
+      body.resolutionNotes || ''
+    ).trim();
+
+    if (!resolutionNotes) {
+      throw new Error('Debes indicar las notas de resolución');
+    }
+
+    if (!jobRequest.payment) {
+      throw new Error('No se encontró el pago asociado al trabajo');
+    }
+
+    const totalAmount =
+      Math.round(Number(jobRequest.payment.amount) * 100) / 100;
+
+    /*
+     * Si la terminación ocurrió antes del pago:
+     * no existen fondos que repartir.
+     */
+    if (termination.jobStatusAtRequest === 'AWAITING_PAYMENT') {
+      if (jobRequest.payment.status !== 'PENDING') {
+        throw new Error(
+          'El pago pendiente no se encuentra disponible para cancelar'
+        );
+      }
+
+      return this.prisma.$transaction(async (tx) => {
+        const now = new Date();
+
+        await tx.payment.update({
+          where: { id: jobRequest.payment!.id },
+          data: { status: 'CANCELLED' }
+        });
+
+        const updatedTermination =
+          await tx.terminationRequest.update({
+            where: { id: termination.id },
+            data: {
+              status: 'RESOLVED',
+              liability: liability as 'CLIENT' | 'SPECIALIST' | 'NONE',
+              specialistPayoutAmount: 0,
+              clientRefundAmount: 0,
+              penaltyAmount: 0,
+              resolutionNotes,
+              resolvedAt: now
+            }
+          });
+
+        await tx.jobRequest.update({
+          where: { id: jobRequestId },
+          data: { status: 'CANCELLED' }
+        });
+
+        return {
+          terminationRequest: updatedTermination,
+          settlement: {
+            totalAmount,
+            specialistPayout: 0,
+            clientRefund: 0,
+            penaltyAmount: 0
+          }
+        };
+      });
+    }
+
+    if (jobRequest.payment.status !== 'PAID') {
+      throw new Error(
+        'El pago no está disponible para una liquidación administrativa'
+      );
+    }
+
+    const specialistPayout =
+      Math.round(Number(body.specialistPayoutAmount) * 100) / 100;
+
+    const clientRefund =
+      Math.round(Number(body.clientRefundAmount) * 100) / 100;
+
+    const penaltyAmount =
+      Math.round(Number(body.penaltyAmount || 0) * 100) / 100;
+
+    if (
+      !Number.isFinite(specialistPayout) ||
+      specialistPayout < 0
+    ) {
+      throw new Error(
+        'El pago al especialista debe ser un monto válido'
+      );
+    }
+
+    if (
+      !Number.isFinite(clientRefund) ||
+      clientRefund < 0
+    ) {
+      throw new Error(
+        'El reembolso al cliente debe ser un monto válido'
+      );
+    }
+
+    if (
+      !Number.isFinite(penaltyAmount) ||
+      penaltyAmount < 0
+    ) {
+      throw new Error(
+        'La penalización debe ser un monto válido'
+      );
+    }
+
+    const distributedAmount =
+      Math.round((specialistPayout + clientRefund) * 100) / 100;
+
+    if (Math.abs(distributedAmount - totalAmount) > 0.009) {
+      throw new Error(
+        `El pago al especialista más el reembolso al cliente debe sumar exactamente $${totalAmount.toFixed(2)}`
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+
+      if (specialistPayout > 0) {
+        await tx.paymentMovement.create({
+          data: {
+            paymentId: jobRequest.payment!.id,
+            type: 'SPECIALIST_PAYOUT',
+            amount: specialistPayout,
+            currency: jobRequest.payment!.currency,
+            description:
+              'Pago al especialista determinado por resolución administrativa de terminación disputada'
+          }
+        });
+      }
+
+      if (clientRefund > 0) {
+        await tx.paymentMovement.create({
+          data: {
+            paymentId: jobRequest.payment!.id,
+            type: 'CLIENT_REFUND',
+            amount: clientRefund,
+            currency: jobRequest.payment!.currency,
+            description:
+              'Reembolso al cliente determinado por resolución administrativa de terminación disputada'
+          }
+        });
+      }
+
+      if (penaltyAmount > 0) {
+        await tx.paymentMovement.create({
+          data: {
+            paymentId: jobRequest.payment!.id,
+            type: 'PENALTY',
+            amount: penaltyAmount,
+            currency: jobRequest.payment!.currency,
+            description:
+              'Penalización determinada por resolución administrativa de terminación disputada'
+          }
+        });
+      }
+
+      await tx.payment.update({
+        where: { id: jobRequest.payment!.id },
+        data: { status: 'SETTLED' }
+      });
+
+      const updatedTermination =
+        await tx.terminationRequest.update({
+          where: { id: termination.id },
+          data: {
+            status: 'RESOLVED',
+            liability: liability as 'CLIENT' | 'SPECIALIST' | 'NONE',
+            specialistPayoutAmount: specialistPayout,
+            clientRefundAmount: clientRefund,
+            penaltyAmount,
+            resolutionNotes,
+            resolvedAt: now
+          }
+        });
+
+      await tx.jobRequest.update({
+        where: { id: jobRequestId },
+        data: { status: 'CANCELLED' }
+      });
+
+      return {
+        terminationRequest: updatedTermination,
+        settlement: {
+          totalAmount,
+          specialistPayout,
+          clientRefund,
+          penaltyAmount,
+          liability
+        }
+      };
     });
   }
 
@@ -1794,6 +2171,115 @@ export class JobRequestsController {
         approvedAmount: null,
         resolutionNotes: responseNotes
       }
+    });
+  }
+
+  @Get('admin/damage-claims')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async getAdminDamageClaims() {
+    const claims = await this.prisma.damageClaim.findMany({
+      where: {
+        status: {
+          in: ['ACCEPTED', 'DISPUTED', 'RESOLVED', 'REJECTED']
+        }
+      },
+      include: {
+        claimedBy: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true
+          }
+        },
+        terminationRequest: {
+          include: {
+            jobRequest: {
+              include: {
+                client: {
+                  include: {
+                    user: {
+                      select: {
+                        id: true,
+                        name: true,
+                        email: true
+                      }
+                    }
+                  }
+                },
+                proposals: {
+                  where: {
+                    status: 'ACCEPTED'
+                  },
+                  take: 1,
+                  include: {
+                    specialist: {
+                      include: {
+                        user: {
+                          select: {
+                            id: true,
+                            name: true,
+                            email: true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    return claims.map((claim) => {
+      const jobRequest = claim.terminationRequest.jobRequest;
+      const acceptedProposal = jobRequest.proposals[0];
+
+      return {
+        id: claim.id,
+        type: claim.type,
+        description: claim.description,
+        claimedAmount:
+          claim.claimedAmount !== null
+            ? Number(claim.claimedAmount)
+            : null,
+        approvedAmount:
+          claim.approvedAmount !== null
+            ? Number(claim.approvedAmount)
+            : null,
+        status: claim.status,
+        claimedAgainst: claim.claimedAgainst,
+        coverageSource: claim.coverageSource,
+        insuranceReference: claim.insuranceReference,
+        resolutionNotes: claim.resolutionNotes,
+        createdAt: claim.createdAt,
+        resolvedAt: claim.resolvedAt,
+        claimedBy: claim.claimedBy,
+        jobRequest: {
+          id: jobRequest.id,
+          title: jobRequest.title,
+          status: jobRequest.status,
+          city: jobRequest.city,
+          state: jobRequest.state,
+          client: {
+            id: jobRequest.client.id,
+            name: jobRequest.client.user.name,
+            email: jobRequest.client.user.email
+          },
+          specialist: acceptedProposal
+            ? {
+                id: acceptedProposal.specialist.id,
+                name: acceptedProposal.specialist.user.name,
+                email: acceptedProposal.specialist.user.email
+              }
+            : null
+        }
+      };
     });
   }
 

@@ -13,8 +13,13 @@ export default function MisSolicitudes() {
   const [submittingReview, setSubmittingReview] = useState<string | null>(null);
   const [processingPayment, setProcessingPayment] = useState<string | null>(null);
   const [confirmingCompletion, setConfirmingCompletion] = useState<string | null>(null);
+  const [confirmingCancellation, setConfirmingCancellation] = useState<string | null>(null);
+  const [confirmingProposalRejection, setConfirmingProposalRejection] = useState<string | null>(null);
   const [terminationJobId, setTerminationJobId] = useState<string | null>(null);
   const [submittingTermination, setSubmittingTermination] = useState<string | null>(null);
+  const [confirmingTerminationAcceptance, setConfirmingTerminationAcceptance] = useState<string | null>(null);
+  const [disputingTerminationJobId, setDisputingTerminationJobId] = useState<string | null>(null);
+  const [terminationDisputeReason, setTerminationDisputeReason] = useState('');
   const [terminationDraft, setTerminationDraft] = useState({
     reasonCode: '',
     reasonDetails: '',
@@ -92,13 +97,18 @@ export default function MisSolicitudes() {
     }
   }
 
-  async function rejectProposal(jobId: string, proposalId: string) {
-    const confirmed = window.confirm(
-      '¿Seguro que quieres rechazar esta propuesta?'
-    );
+  async function rejectProposal(
+    jobId: string,
+    proposalId: string,
+    confirmed = false
+  ) {
+    if (!confirmed) {
+      setConfirmingProposalRejection(proposalId);
+      setError('');
+      return;
+    }
 
-    if (!confirmed) return;
-
+    setConfirmingProposalRejection(null);
     setError('');
 
     try {
@@ -210,6 +220,7 @@ export default function MisSolicitudes() {
 
       const updated = await api('/job-requests/me');
       setItems(updated);
+      cancelTerminationDispute();
     } catch (e: any) {
       setError(e.message || 'No se pudo confirmar el pago.');
     } finally {
@@ -217,15 +228,17 @@ export default function MisSolicitudes() {
     }
   }
 
-  async function confirmCompletion(jobId: string) {
-    const confirmed = window.confirm(
-      '¿Confirmas que el especialista terminó correctamente el trabajo?'
-    );
-
-    if (!confirmed) return;
+  async function confirmCompletion(
+    jobId: string,
+    confirmed = false
+  ) {
+    if (!confirmed) {
+      setConfirmingCompletion(jobId);
+      setError('');
+      return;
+    }
 
     setError('');
-    setConfirmingCompletion(jobId);
 
     try {
       await api(`/job-requests/${jobId}/complete/confirm`, {
@@ -324,13 +337,17 @@ export default function MisSolicitudes() {
     }
   }
 
-  async function cancelJob(jobId: string) {
-    const confirmed = window.confirm(
-      '¿Seguro que quieres cancelar esta solicitud?'
-    );
+  async function cancelJob(
+    jobId: string,
+    confirmed = false
+  ) {
+    if (!confirmed) {
+      setConfirmingCancellation(jobId);
+      setError('');
+      return;
+    }
 
-    if (!confirmed) return;
-
+    setConfirmingCancellation(null);
     setError('');
 
     try {
@@ -449,13 +466,17 @@ export default function MisSolicitudes() {
     }
   }
 
-  async function acceptTermination(jobId: string) {
-    const confirmed = window.confirm(
-      '¿Aceptas la terminación anticipada? Esta decisión puede generar reembolsos, pagos o penalizaciones según la etapa del trabajo.'
-    );
+  async function acceptTermination(
+    jobId: string,
+    confirmed = false
+  ) {
+    if (!confirmed) {
+      setConfirmingTerminationAcceptance(jobId);
+      setError('');
+      return;
+    }
 
-    if (!confirmed) return;
-
+    setConfirmingTerminationAcceptance(null);
     setError('');
     setSubmittingTermination(jobId);
 
@@ -473,14 +494,21 @@ export default function MisSolicitudes() {
     }
   }
 
+  function startTerminationDispute(jobId: string) {
+    setDisputingTerminationJobId(jobId);
+    setTerminationDisputeReason('');
+    setError('');
+  }
+
+  function cancelTerminationDispute() {
+    setDisputingTerminationJobId(null);
+    setTerminationDisputeReason('');
+  }
+
   async function disputeTermination(jobId: string) {
-    const reason = window.prompt(
-      'Indica brevemente por qué disputas la terminación:'
-    );
+    const reason = terminationDisputeReason.trim();
 
-    if (reason === null) return;
-
-    if (!reason.trim()) {
+    if (!reason) {
       setError('Debes indicar el motivo de la disputa.');
       return;
     }
@@ -492,7 +520,7 @@ export default function MisSolicitudes() {
       await api(`/job-requests/${jobId}/termination-request/dispute`, {
         method: 'POST',
         body: JSON.stringify({
-          reasonDetails: reason.trim()
+          reasonDetails: reason
         })
       });
 
@@ -630,34 +658,89 @@ export default function MisSolicitudes() {
               <div style={{ marginTop: '16px', marginBottom: '16px' }}>
                 <h4>Reclamaciones de daños</h4>
 
-                {job.terminationRequest.damageClaims.map((claim: any) => (
-                  <div key={claim.id} style={{ marginBottom: '16px' }}>
-                    <p><strong>Tipo:</strong> {claim.type}</p>
-                    <p><strong>Descripción:</strong> {claim.description}</p>
+                {job.terminationRequest.damageClaims.map((claim: any) => {
+                  const tipo =
+                    claim.type === 'RESTITUTION'
+                      ? 'Restitución'
+                      : claim.type === 'COMPENSATION'
+                        ? 'Compensación'
+                        : claim.type === 'BOTH'
+                          ? 'Restitución y compensación'
+                          : claim.type;
 
-                    {claim.claimedAmount !== null && (
-                      <p>
-                        <strong>Monto reclamado:</strong> $
-                        {Number(claim.claimedAmount).toFixed(2)}
-                      </p>
-                    )}
+                  const estado =
+                    claim.status === 'PENDING'
+                      ? 'Pendiente'
+                      : claim.status === 'ACCEPTED'
+                        ? 'Aceptada'
+                        : claim.status === 'DISPUTED'
+                          ? 'En disputa'
+                          : claim.status === 'RESOLVED'
+                            ? 'Resuelta'
+                            : claim.status === 'REJECTED'
+                              ? 'Rechazada'
+                              : claim.status;
 
-                    {claim.approvedAmount !== null && (
-                      <p>
-                        <strong>Monto aprobado:</strong> $
-                        {Number(claim.approvedAmount).toFixed(2)}
-                      </p>
-                    )}
+                  return (
+                    <details
+                      key={claim.id}
+                      open={claim.status === 'PENDING' || claim.status === 'DISPUTED'}
+                      style={{
+                        border: '1px solid #ddd',
+                        borderRadius: '10px',
+                        padding: '14px',
+                        marginBottom: '12px'
+                      }}
+                    >
+                      <summary
+                        style={{
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                      >
+                        {tipo} · {estado}
+                        {claim.createdAt
+                          ? ` · ${new Date(claim.createdAt).toLocaleDateString()}`
+                          : ''}
+                      </summary>
 
-                    <p><strong>Estado:</strong> {claim.status}</p>
+                      <div style={{ marginTop: '14px' }}>
+                        <p>
+                          <strong>Tipo:</strong> {tipo}
+                        </p>
 
-                    {claim.resolutionNotes && (
-                      <p>
-                        <strong>Resolución:</strong> {claim.resolutionNotes}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                        <p>
+                          <strong>Estado:</strong> {estado}
+                        </p>
+
+                        <p>
+                          <strong>Descripción:</strong> {claim.description}
+                        </p>
+
+                        {claim.claimedAmount !== null && (
+                          <p>
+                            <strong>Monto reclamado:</strong> $
+                            {Number(claim.claimedAmount).toFixed(2)}
+                          </p>
+                        )}
+
+                        {claim.approvedAmount !== null && (
+                          <p>
+                            <strong>Monto aprobado:</strong> $
+                            {Number(claim.approvedAmount).toFixed(2)}
+                          </p>
+                        )}
+
+                        {claim.resolutionNotes && (
+                          <p>
+                            <strong>Respuesta o resolución:</strong>{' '}
+                            {claim.resolutionNotes}
+                          </p>
+                        )}
+                      </div>
+                    </details>
+                  );
+                })}
               </div>
             )}
 
@@ -714,12 +797,44 @@ export default function MisSolicitudes() {
                 <button
                   type="button"
                   onClick={() => confirmCompletion(job.id)}
-                  disabled={confirmingCompletion === job.id}
                 >
-                  {confirmingCompletion === job.id
-                    ? 'Confirmando...'
-                    : 'Confirmar trabajo terminado'}
+                  Confirmar trabajo terminado
                 </button>
+
+                {confirmingCompletion === job.id && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <p style={{ marginTop: 0 }}>
+                      <strong>Confirmar finalización</strong>
+                    </p>
+
+                    <p>
+                      Confirma únicamente si el especialista terminó
+                      correctamente el trabajo.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => confirmCompletion(job.id, true)}
+                    >
+                      Confirmar finalización
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingCompletion(null)}
+                      style={{ marginTop: '8px' }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -845,14 +960,104 @@ export default function MisSolicitudes() {
                       Aceptar terminación
                     </button>
 
+                    {confirmingTerminationAcceptance === job.id && (
+                      <div
+                        style={{
+                          marginTop: '12px',
+                          padding: '14px',
+                          border: '1px solid #ddd',
+                          borderRadius: '10px'
+                        }}
+                      >
+                        <p style={{ marginTop: 0 }}>
+                          <strong>Confirmar aceptación</strong>
+                        </p>
+
+                        <p>
+                          Esta decisión puede generar reembolsos, pagos o
+                          penalizaciones según la etapa del trabajo.
+                        </p>
+
+                        <button
+                          type="button"
+                          onClick={() => acceptTermination(job.id, true)}
+                          disabled={submittingTermination === job.id}
+                        >
+                          {submittingTermination === job.id
+                            ? 'Procesando...'
+                            : 'Confirmar aceptación'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setConfirmingTerminationAcceptance(null)
+                          }
+                          disabled={submittingTermination === job.id}
+                          style={{ marginTop: '8px' }}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+
                     <button
                       type="button"
-                      onClick={() => disputeTermination(job.id)}
+                      onClick={() => startTerminationDispute(job.id)}
                       disabled={submittingTermination === job.id}
                       style={{ marginTop: '8px' }}
                     >
                       Disputar terminación
                     </button>
+
+                    {disputingTerminationJobId === job.id && (
+                      <div
+                        style={{
+                          marginTop: '12px',
+                          padding: '14px',
+                          border: '1px solid #ddd',
+                          borderRadius: '10px'
+                        }}
+                      >
+                        <p style={{ marginTop: 0 }}>
+                          <strong>Motivo de la disputa</strong>
+                        </p>
+
+                        <textarea
+                          value={terminationDisputeReason}
+                          onChange={(e) =>
+                            setTerminationDisputeReason(e.target.value)
+                          }
+                          placeholder="Explica brevemente por qué disputas la terminación"
+                          rows={4}
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            marginTop: '6px',
+                            marginBottom: '12px'
+                          }}
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => disputeTermination(job.id)}
+                          disabled={submittingTermination === job.id}
+                        >
+                          {submittingTermination === job.id
+                            ? 'Enviando...'
+                            : 'Enviar disputa'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={cancelTerminationDispute}
+                          disabled={submittingTermination === job.id}
+                          style={{ marginTop: '8px' }}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <p>
@@ -870,10 +1075,72 @@ export default function MisSolicitudes() {
                   liberar o devolver fondos.
                 </p>
 
-                {job.terminationRequest.resolutionNotes && (
+                {job.terminationRequest.disputeNotes && (
                   <p>
                     <strong>Motivo de la disputa:</strong>{' '}
+                    {job.terminationRequest.disputeNotes}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {job.terminationRequest?.status === 'RESOLVED' && (
+              <div
+                style={{
+                  marginTop: '16px',
+                  marginBottom: '16px',
+                  border: '1px solid #ddd',
+                  borderRadius: '10px',
+                  padding: '14px'
+                }}
+              >
+                <h4>Terminación resuelta</h4>
+
+                <p>
+                  <strong>Responsabilidad final:</strong>{' '}
+                  {job.terminationRequest.liability === 'CLIENT'
+                    ? 'Cliente'
+                    : job.terminationRequest.liability === 'SPECIALIST'
+                      ? 'Especialista'
+                      : job.terminationRequest.liability === 'NONE'
+                        ? 'Ninguna'
+                        : 'No determinada'}
+                </p>
+
+                <p>
+                  <strong>Pago al especialista:</strong> $
+                  {Number(
+                    job.terminationRequest.specialistPayoutAmount || 0
+                  ).toFixed(2)}
+                </p>
+
+                <p>
+                  <strong>Reembolso al cliente:</strong> $
+                  {Number(
+                    job.terminationRequest.clientRefundAmount || 0
+                  ).toFixed(2)}
+                </p>
+
+                <p>
+                  <strong>Penalización:</strong> $
+                  {Number(
+                    job.terminationRequest.penaltyAmount || 0
+                  ).toFixed(2)}
+                </p>
+
+                {job.terminationRequest.resolutionNotes && (
+                  <p>
+                    <strong>Resolución administrativa:</strong>{' '}
                     {job.terminationRequest.resolutionNotes}
+                  </p>
+                )}
+
+                {job.terminationRequest.resolvedAt && (
+                  <p>
+                    <strong>Fecha de resolución:</strong>{' '}
+                    {new Date(
+                      job.terminationRequest.resolvedAt
+                    ).toLocaleDateString()}
                   </p>
                 )}
               </div>
@@ -1144,13 +1411,49 @@ export default function MisSolicitudes() {
             )}
 
             {['DRAFT', 'PUBLISHED', 'RECEIVING_QUOTES'].includes(job.status) && (
-              <button
-                type="button"
-                onClick={() => cancelJob(job.id)}
-                style={{ marginBottom: '8px' }}
-              >
-                Cancelar solicitud
-              </button>
+              <div style={{ marginBottom: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => cancelJob(job.id)}
+                >
+                  Cancelar solicitud
+                </button>
+
+                {confirmingCancellation === job.id && (
+                  <div
+                    style={{
+                      marginTop: '12px',
+                      padding: '14px',
+                      border: '1px solid #ddd',
+                      borderRadius: '10px'
+                    }}
+                  >
+                    <p style={{ marginTop: 0 }}>
+                      <strong>Confirmar cancelación</strong>
+                    </p>
+
+                    <p>
+                      Esta acción cancelará la solicitud y ya no aceptará
+                      nuevas propuestas.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => cancelJob(job.id, true)}
+                    >
+                      Confirmar cancelación
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingCancellation(null)}
+                      style={{ marginTop: '8px' }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
 
             <button
@@ -1235,6 +1538,49 @@ export default function MisSolicitudes() {
                         >
                           Rechazar propuesta
                         </button>
+
+                        {confirmingProposalRejection === proposal.id && (
+                          <div
+                            style={{
+                              marginTop: '12px',
+                              padding: '14px',
+                              border: '1px solid #ddd',
+                              borderRadius: '10px'
+                            }}
+                          >
+                            <p style={{ marginTop: 0 }}>
+                              <strong>Confirmar rechazo</strong>
+                            </p>
+
+                            <p>
+                              Esta propuesta quedará rechazada y ya no podrá
+                              ser aceptada.
+                            </p>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                rejectProposal(
+                                  job.id,
+                                  proposal.id,
+                                  true
+                                )
+                              }
+                            >
+                              Confirmar rechazo
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setConfirmingProposalRejection(null)
+                              }
+                              style={{ marginTop: '8px' }}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
