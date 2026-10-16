@@ -12,6 +12,8 @@ export default function RootLayout({
   const [loggedIn, setLoggedIn] = useState(false);
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
+  const [isSpecialist, setIsSpecialist] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -22,7 +24,11 @@ export default function RootLayout({
     if (!isLoggedIn) return;
 
     api('/users/me')
-      .then((user) => setUserRole(user.role))
+      .then((user) => {
+        setUserRole(user.role);
+        setIsClient(user.client?.status === 'ACTIVE');
+        setIsSpecialist(Boolean(user.specialist));
+      })
       .catch(() => {});
 
     const loadUnreadTotal = () => {
@@ -63,21 +69,31 @@ export default function RootLayout({
           </strong>
 
           <nav>
-            <a href="/especialistas">Buscar</a>
-
-            {' · '}
-
             {loggedIn ? (
               <>
+                {isClient && (
+                  <>
+                    <a href="/especialistas">Buscar</a>
+                    {' · '}
+                  </>
+                )}
+
                 <a href="/dashboard">Mi panel</a>
+
                 {' · '}
+
                 <a href="/mensajes">
-              {unreadTotal > 0
-                ? `Mensajes (${unreadTotal})`
-                : 'Mensajes'}
-            </a>
-            {' · '}
-            <a href="/perfil-especialista">Editar perfil</a>
+                  {unreadTotal > 0
+                    ? `Mensajes (${unreadTotal})`
+                    : 'Mensajes'}
+                </a>
+
+                {isSpecialist && (
+                  <>
+                    {' · '}
+                    <a href="/perfil-especialista">Editar perfil</a>
+                  </>
+                )}
               </>
             ) : (
               <>

@@ -17,6 +17,23 @@ export default function MisTrabajos() {
   const [loadingChat, setLoadingChat] = useState<string | null>(null);
   const [sendingChat, setSendingChat] = useState<string | null>(null);
   const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
+  const [workOrders, setWorkOrders] = useState<Record<string, any>>({});
+  const [loadingWorkOrder, setLoadingWorkOrder] = useState<string | null>(null);
+  const [acceptingWorkOrder, setAcceptingWorkOrder] = useState<string | null>(null);
+  const [editingWorkOrderId, setEditingWorkOrderId] = useState<string | null>(null);
+  const [revisingWorkOrder, setRevisingWorkOrder] = useState<string | null>(null);
+  const [workOrderDrafts, setWorkOrderDrafts] = useState<
+    Record<
+      string,
+      {
+        includedScope: string;
+        excludedScope: string;
+        scheduledDate: string;
+        laborAmount: string;
+        materialsAmount: string;
+      }
+    >
+  >({});
   const [terminationDisputeJobId, setTerminationDisputeJobId] = useState<string | null>(null);
   const [terminationDisputeDrafts, setTerminationDisputeDrafts] = useState<Record<string, string>>({});
   const [damageClaimDisputeId, setDamageClaimDisputeId] = useState<string | null>(null);
@@ -83,6 +100,104 @@ export default function MisTrabajos() {
       setUpdatingId(null);
     }
   }
+
+  async function loadWorkOrder(jobId: string) {
+    setError('');
+    setLoadingWorkOrder(jobId);
+
+    try {
+      const data = await api(`/job-requests/${jobId}/work-order`);
+
+      setWorkOrders((prev) => ({
+        ...prev,
+        [jobId]: data
+      }));
+    } catch (e: any) {
+      setError(e.message || 'No se pudo cargar la Orden de Trabajo.');
+    } finally {
+      setLoadingWorkOrder(null);
+    }
+  }
+
+  async function acceptWorkOrder(jobId: string) {
+    setError('');
+    setAcceptingWorkOrder(jobId);
+
+    try {
+      const data = await api(`/job-requests/${jobId}/work-order/accept`, {
+        method: 'POST'
+      });
+
+      setWorkOrders((prev) => ({
+        ...prev,
+        [jobId]: data
+      }));
+
+      if (data.status === 'ACCEPTED') {
+        cargarTrabajos();
+      }
+    } catch (e: any) {
+      setError(e.message || 'No se pudo aceptar la Orden de Trabajo.');
+    } finally {
+      setAcceptingWorkOrder(null);
+    }
+  }
+
+
+  function startWorkOrderRevision(jobId: string) {
+    const workOrder = workOrders[jobId];
+
+    if (!workOrder) return;
+
+    setWorkOrderDrafts((prev) => ({
+      ...prev,
+      [jobId]: {
+        includedScope: workOrder.includedScope ?? '',
+        excludedScope: workOrder.excludedScope ?? '',
+        scheduledDate: workOrder.scheduledDate
+          ? new Date(workOrder.scheduledDate).toISOString().slice(0, 10)
+          : '',
+        laborAmount: String(workOrder.laborAmount ?? ''),
+        materialsAmount: String(workOrder.materialsAmount ?? '')
+      }
+    }));
+
+    setEditingWorkOrderId(jobId);
+  }
+
+  async function reviseWorkOrder(jobId: string) {
+    const draft = workOrderDrafts[jobId];
+
+    if (!draft) return;
+
+    setError('');
+    setRevisingWorkOrder(jobId);
+
+    try {
+      const data = await api(`/job-requests/${jobId}/work-order/revise`, {
+        method: 'POST',
+        body: JSON.stringify({
+          includedScope: draft.includedScope,
+          excludedScope: draft.excludedScope,
+          scheduledDate: draft.scheduledDate || null,
+          laborAmount: Number(draft.laborAmount),
+          materialsAmount: Number(draft.materialsAmount)
+        })
+      });
+
+      setWorkOrders((prev) => ({
+        ...prev,
+        [jobId]: data
+      }));
+
+      setEditingWorkOrderId(null);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo generar la nueva versión de la Orden de Trabajo.');
+    } finally {
+      setRevisingWorkOrder(null);
+    }
+  }
+
 
   async function toggleChat(jobId: string) {
     if (openChatJobId === jobId) {
@@ -285,6 +400,8 @@ export default function MisTrabajos() {
   }
 
   function estado(status: string) {
+    if (status === 'PENDING_AGREEMENT') return 'Pendiente de aceptación de la Orden de Trabajo';
+    if (status === 'AWAITING_PAYMENT') return 'Esperando pago del cliente';
     if (status === 'ASSIGNED') return 'Asignado';
     if (status === 'IN_PROGRESS') return 'En progreso';
     if (status === 'AWAITING_CLIENT_CONFIRMATION') return 'Esperando confirmación del cliente';
@@ -383,6 +500,288 @@ export default function MisTrabajos() {
                     </p>
                   )}
                 </>
+              )}
+
+              {[
+                'PENDING_AGREEMENT',
+                'AWAITING_PAYMENT',
+                'ASSIGNED',
+                'IN_PROGRESS',
+                'AWAITING_CLIENT_CONFIRMATION',
+                'TERMINATION_REQUESTED',
+                'DISPUTED',
+                'COMPLETED',
+                'CANCELLED'
+              ].includes(job.status) && (
+                <div
+                  style={{
+                    marginTop: '16px',
+                    marginBottom: '16px',
+                    padding: '14px',
+                    border: '1px solid #ddd',
+                    borderRadius: '10px'
+                  }}
+                >
+                  <h4 style={{ marginTop: 0 }}>Orden de Trabajo</h4>
+
+                  {!workOrders[job.id] ? (
+                    <button
+                      type="button"
+                      onClick={() => loadWorkOrder(job.id)}
+                      disabled={loadingWorkOrder === job.id}
+                    >
+                      {loadingWorkOrder === job.id
+                        ? 'Cargando...'
+                        : 'Ver Orden de Trabajo'}
+                    </button>
+                  ) : (
+                    <>
+                      <p>
+                        <strong>Versión:</strong>{' '}
+                        {workOrders[job.id].version}
+                      </p>
+
+                      <p>
+                        <strong>Trabajo:</strong>{' '}
+                        {workOrders[job.id].title}
+                      </p>
+
+                      <p>
+                        <strong>Descripción:</strong>{' '}
+                        {workOrders[job.id].description}
+                      </p>
+
+                      {workOrders[job.id].includedScope && (
+                        <p>
+                          <strong>Alcance incluido:</strong>{' '}
+                          {workOrders[job.id].includedScope}
+                        </p>
+                      )}
+
+                      {workOrders[job.id].excludedScope && (
+                        <p>
+                          <strong>Alcance excluido:</strong>{' '}
+                          {workOrders[job.id].excludedScope}
+                        </p>
+                      )}
+
+                      <p>
+                        <strong>Ubicación:</strong>{' '}
+                        {[
+                          workOrders[job.id].city,
+                          workOrders[job.id].state,
+                          workOrders[job.id].zipcode
+                        ]
+                          .filter(Boolean)
+                          .join(', ')}
+                      </p>
+
+                      {workOrders[job.id].scheduledDate && (
+                        <p>
+                          <strong>Fecha prevista:</strong>{' '}
+                          {new Date(
+                            workOrders[job.id].scheduledDate
+                          ).toLocaleDateString(undefined, { timeZone: 'UTC' })}
+                        </p>
+                      )}
+
+                      <p>
+                        <strong>Mano de obra:</strong> $
+                        {Number(
+                          workOrders[job.id].laborAmount
+                        ).toFixed(2)}
+                      </p>
+
+                      <p>
+                        <strong>Materiales:</strong> $
+                        {Number(
+                          workOrders[job.id].materialsAmount
+                        ).toFixed(2)}
+                      </p>
+
+                      <p>
+                        <strong>Total:</strong> $
+                        {(
+                          Number(workOrders[job.id].laborAmount) +
+                          Number(workOrders[job.id].materialsAmount)
+                        ).toFixed(2)}
+                      </p>
+
+                      <p>
+                        <strong>Aceptación del cliente:</strong>{' '}
+                        {workOrders[job.id].clientAcceptedAt
+                          ? 'Aceptada'
+                          : 'Pendiente'}
+                      </p>
+
+                      <p>
+                        <strong>Tu aceptación:</strong>{' '}
+                        {workOrders[job.id].specialistAcceptedAt
+                          ? 'Aceptada'
+                          : 'Pendiente'}
+                      </p>
+
+                      {!workOrders[job.id].specialistAcceptedAt && (
+                        <button
+                          type="button"
+                          onClick={() => acceptWorkOrder(job.id)}
+                          disabled={acceptingWorkOrder === job.id}
+                        >
+                          {acceptingWorkOrder === job.id
+                            ? 'Aceptando...'
+                            : 'Aceptar Orden de Trabajo'}
+                        </button>
+                      )}
+
+                      {job.status === 'PENDING_AGREEMENT' &&
+                        workOrders[job.id].status === 'PENDING_ACCEPTANCE' && (
+                          <div style={{ marginTop: '12px' }}>
+                            {editingWorkOrderId !== job.id ? (
+                              <button
+                                type="button"
+                                onClick={() => startWorkOrderRevision(job.id)}
+                              >
+                                Proponer cambios
+                              </button>
+                            ) : (
+                              <div
+                                style={{
+                                  marginTop: '12px',
+                                  padding: '12px',
+                                  border: '1px solid #ddd',
+                                  borderRadius: '8px'
+                                }}
+                              >
+                                <h5 style={{ marginTop: 0 }}>
+                                  Proponer nueva versión
+                                </h5>
+
+                                <label>
+                                  Alcance incluido
+                                  <textarea
+                                    value={
+                                      workOrderDrafts[job.id]?.includedScope ?? ''
+                                    }
+                                    onChange={(e) =>
+                                      setWorkOrderDrafts((prev) => ({
+                                        ...prev,
+                                        [job.id]: {
+                                          ...prev[job.id],
+                                          includedScope: e.target.value
+                                        }
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <label>
+                                  Alcance excluido
+                                  <textarea
+                                    value={
+                                      workOrderDrafts[job.id]?.excludedScope ?? ''
+                                    }
+                                    onChange={(e) =>
+                                      setWorkOrderDrafts((prev) => ({
+                                        ...prev,
+                                        [job.id]: {
+                                          ...prev[job.id],
+                                          excludedScope: e.target.value
+                                        }
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <label>
+                                  Fecha prevista
+                                  <input
+                                    type="date"
+                                    value={
+                                      workOrderDrafts[job.id]?.scheduledDate ?? ''
+                                    }
+                                    onChange={(e) =>
+                                      setWorkOrderDrafts((prev) => ({
+                                        ...prev,
+                                        [job.id]: {
+                                          ...prev[job.id],
+                                          scheduledDate: e.target.value
+                                        }
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <label>
+                                  Mano de obra
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={
+                                      workOrderDrafts[job.id]?.laborAmount ?? ''
+                                    }
+                                    onWheel={(e) => e.currentTarget.blur()}
+                                    onChange={(e) =>
+                                      setWorkOrderDrafts((prev) => ({
+                                        ...prev,
+                                        [job.id]: {
+                                          ...prev[job.id],
+                                          laborAmount: e.target.value
+                                        }
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <label>
+                                  Materiales
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={
+                                      workOrderDrafts[job.id]?.materialsAmount ?? ''
+                                    }
+                                    onWheel={(e) => e.currentTarget.blur()}
+                                    onChange={(e) =>
+                                      setWorkOrderDrafts((prev) => ({
+                                        ...prev,
+                                        [job.id]: {
+                                          ...prev[job.id],
+                                          materialsAmount: e.target.value
+                                        }
+                                      }))
+                                    }
+                                  />
+                                </label>
+
+                                <div style={{ marginTop: '12px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => reviseWorkOrder(job.id)}
+                                    disabled={revisingWorkOrder === job.id}
+                                  >
+                                    {revisingWorkOrder === job.id
+                                      ? 'Generando...'
+                                      : 'Generar nueva versión'}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingWorkOrderId(null)}
+                                    disabled={revisingWorkOrder === job.id}
+                                    style={{ marginLeft: '8px' }}
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                    </>
+                  )}
+                </div>
               )}
 
               {proposal && (

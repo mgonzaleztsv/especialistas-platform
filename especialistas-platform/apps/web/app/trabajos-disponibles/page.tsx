@@ -12,6 +12,9 @@ export default function TrabajosDisponibles() {
   const [editingProposalId, setEditingProposalId] = useState<string | null>(null);
   const [proposal, setProposal] = useState({
     amount: '',
+    materialsAmount: '0',
+    includedScope: '',
+    excludedScope: '',
     message: '',
     availableDate: ''
   });
@@ -44,6 +47,9 @@ export default function TrabajosDisponibles() {
         method: 'POST',
         body: JSON.stringify({
           amount: Number(proposal.amount),
+          materialsAmount: Number(proposal.materialsAmount),
+          includedScope: proposal.includedScope || null,
+          excludedScope: proposal.excludedScope || null,
           message: proposal.message || null,
           availableDate: proposal.availableDate || null
         })
@@ -57,6 +63,9 @@ export default function TrabajosDisponibles() {
 
       setProposal({
         amount: '',
+        materialsAmount: '0',
+        includedScope: '',
+        excludedScope: '',
         message: '',
         availableDate: ''
       });
@@ -76,6 +85,9 @@ export default function TrabajosDisponibles() {
     setProposalJobId(job.id);
     setProposal({
       amount: String(existing.amount ?? ''),
+      materialsAmount: String(existing.materialsAmount ?? 0),
+      includedScope: existing.includedScope || '',
+      excludedScope: existing.excludedScope || '',
       message: existing.message || '',
       availableDate: existing.availableDate
         ? String(existing.availableDate).slice(0, 10)
@@ -101,6 +113,9 @@ export default function TrabajosDisponibles() {
         method: 'PATCH',
         body: JSON.stringify({
           amount,
+          materialsAmount: Number(proposal.materialsAmount),
+          includedScope: proposal.includedScope || null,
+          excludedScope: proposal.excludedScope || null,
           message: proposal.message || null,
           availableDate: proposal.availableDate || null
         })
@@ -113,6 +128,9 @@ export default function TrabajosDisponibles() {
       setProposalJobId(null);
       setProposal({
         amount: '',
+        materialsAmount: '0',
+        includedScope: '',
+        excludedScope: '',
         message: '',
         availableDate: ''
       });
@@ -201,7 +219,7 @@ export default function TrabajosDisponibles() {
             {job.desiredDate && (
               <p>
                 <strong>Fecha deseada:</strong>{' '}
-                {new Date(job.desiredDate).toLocaleDateString()}
+                {new Date(job.desiredDate).toLocaleDateString(undefined, { timeZone: 'UTC' })}
               </p>
             )}
 
@@ -321,16 +339,49 @@ export default function TrabajosDisponibles() {
                   : 'Enviar propuesta'}
               </h4>
 
-                <label>Precio ofrecido (USD)</label>
+                <label>Mano de obra (USD)</label>
                 <input
                   type="number"
                   min="0"
                   step="0.01"
                   value={proposal.amount}
+                  onWheel={(e) => e.currentTarget.blur()}
                   onChange={(e) =>
                     updateProposal('amount', e.target.value)
                   }
                   required
+                />
+
+                <label>Materiales (USD)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={proposal.materialsAmount}
+                  onWheel={(e) => e.currentTarget.blur()}
+                  onChange={(e) =>
+                    updateProposal('materialsAmount', e.target.value)
+                  }
+                />
+
+                <label>Alcance incluido</label>
+                <textarea
+                  rows={4}
+                  value={proposal.includedScope}
+                  onChange={(e) =>
+                    updateProposal('includedScope', e.target.value)
+                  }
+                  placeholder="Describe qué trabajos, actividades y conceptos están incluidos."
+                />
+
+                <label>Alcance excluido</label>
+                <textarea
+                  rows={3}
+                  value={proposal.excludedScope}
+                  onChange={(e) =>
+                    updateProposal('excludedScope', e.target.value)
+                  }
+                  placeholder="Indica qué trabajos o conceptos no están incluidos."
                 />
 
                 <label>Mensaje al cliente</label>
@@ -374,6 +425,9 @@ export default function TrabajosDisponibles() {
                     setProposalJobId(null);
                     setProposal({
                       amount: '',
+                      materialsAmount: '0',
+                      includedScope: '',
+                      excludedScope: '',
                       message: '',
                       availableDate: ''
                     });

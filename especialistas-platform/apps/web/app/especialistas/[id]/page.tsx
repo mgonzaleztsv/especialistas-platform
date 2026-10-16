@@ -77,7 +77,7 @@ export default function SpecialistProfile() {
 
         <p>
           <strong>Disponibilidad:</strong>{' '}
-          {specialist.availabilityStatus === 'DISPONIBLE'
+          {specialist.availabilityStatus === 'AVAILABLE'
             ? 'Disponible'
             : specialist.availabilityStatus}
         </p>
@@ -89,7 +89,6 @@ export default function SpecialistProfile() {
             </p>
           )}
 
-          <strong>Confianza:</strong> {specialist.trustScore}%
         </div>
 
         <h2>Especialidades</h2>

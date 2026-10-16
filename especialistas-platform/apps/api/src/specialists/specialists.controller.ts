@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -48,11 +48,24 @@ export class SpecialistsController {
     return Math.min(100, Math.max(0, score));
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get()
   async list(
+    @Req() req: any,
     @Query('category') category?: string,
     @Query('city') city?: string
   ) {
+    const client = await this.prisma.client.findUnique({
+      where: { userId: req.user.userId },
+      select: { id: true, status: true }
+    });
+
+    if (!client || client.status !== 'ACTIVE') {
+      throw new ForbiddenException(
+        'Para consultar el directorio necesitas completar y activar tu perfil de contratación.'
+      );
+    }
+
     const specialists = await this.prisma.specialist.findMany({
       where: {
         categories: category

@@ -41,104 +41,78 @@ export default function Dashboard() {
           <span className="badge">{u.role}</span>
         </p>
 
-        {u.role === 'SPECIALIST' ? (
-          <>
-            <p>Tu perfil profesional ya existe.</p>
+          {u.role === 'ADMIN' ? (
+            <>
+              <p>Panel de administración</p>
 
-          <p>
-            <strong>Calificación:</strong>{' '}
-            {u.specialist?.reviews?.length
-              ? `${(
-                  u.specialist.reviews.reduce(
-                    (sum: number, review: any) => sum + review.rating,
-                    0
-                  ) / u.specialist.reviews.length
-                ).toFixed(1)} / 5 (${u.specialist.reviews.length} ${
-                  u.specialist.reviews.length === 1 ? 'reseña' : 'reseñas'
-                })`
-              : 'Sin calificaciones'}
-          </p>
+              <p><a href="/admin/verificaciones">Revisar verificaciones</a></p>
+              <p><a href="/admin/reclamaciones">Revisar reclamaciones de daños</a></p>
+              <p><a href="/admin/terminaciones">Revisar terminaciones disputadas</a></p>
+            </>
+          ) : (
+            <>
+              {u.client && (
+                <section>
+                  <h2>Contratar servicios</h2>
 
-            <p>
-              Completa tu información profesional para que los clientes puedan
-              encontrarte y conocerte mejor.
-            </p>
+                  <p>Tu perfil de cliente está listo.</p>
 
-            <p>
-              <a href="/perfil-especialista">
-                Completar mi perfil profesional
-              </a>
-            </p>
+                  <p>
+                    <strong>Calificación:</strong>{' '}
+                    {u.client.specialistReviews?.length
+                      ? `${(
+                          u.client.specialistReviews.reduce(
+                            (sum: number, review: any) => sum + review.rating,
+                            0
+                          ) / u.client.specialistReviews.length
+                        ).toFixed(1)} / 5 (${u.client.specialistReviews.length} ${
+                          u.client.specialistReviews.length === 1
+                            ? 'reseña'
+                            : 'reseñas'
+                        })`
+                      : 'Sin calificaciones'}
+                  </p>
 
-            <p>
-              <a href="/trabajos-disponibles">
-                Trabajos disponibles
-              </a>
-            </p>
+                  <p><a href="/especialistas">Buscar especialistas</a></p>
+                  <p><a href="/publicar-trabajo">Publicar trabajo</a></p>
+                  <p><a href="/mis-solicitudes">Mis solicitudes</a></p>
+                </section>
+              )}
 
-            <p>
-              <a href="/mis-trabajos">
-                Mis trabajos
-              </a>
-            </p>
+              {u.specialist && (
+                <section>
+                  <h2>Ofrecer servicios</h2>
 
-            <p>
-              <a href="/especialistas">Ver directorio público</a>
-            </p>
-          </>
-        ) : u.role === 'ADMIN' ? (
-          <>
-            <p>Panel de administración</p>
+                  <p>Tu perfil profesional ya existe.</p>
 
-            <p>
-              <a href="/admin/verificaciones">
-                Revisar verificaciones
-              </a>
-            </p>
+                  <p>
+                    <strong>Calificación:</strong>{' '}
+                    {u.specialist.reviews?.length
+                      ? `${(
+                          u.specialist.reviews.reduce(
+                            (sum: number, review: any) => sum + review.rating,
+                            0
+                          ) / u.specialist.reviews.length
+                        ).toFixed(1)} / 5 (${u.specialist.reviews.length} ${
+                          u.specialist.reviews.length === 1
+                            ? 'reseña'
+                            : 'reseñas'
+                        })`
+                      : 'Sin calificaciones'}
+                  </p>
 
-            <p>
-              <a href="/admin/reclamaciones">
-                Revisar reclamaciones de daños
-              </a>
-            </p>
+                  <p>
+                    Completa tu información profesional para que los clientes
+                    puedan encontrarte y conocerte mejor.
+                  </p>
 
-            <p>
-              <a href="/admin/terminaciones">
-                Revisar terminaciones disputadas
-              </a>
-            </p>
-          </>
-        ) : (
-          <>
-            <p>Tu perfil de cliente está listo.</p>
-
-          <p>
-            <strong>Calificación:</strong>{' '}
-            {u.client?.specialistReviews?.length
-              ? `${(
-                  u.client.specialistReviews.reduce(
-                    (sum: number, review: any) => sum + review.rating,
-                    0
-                  ) / u.client.specialistReviews.length
-                ).toFixed(1)} / 5 (${u.client.specialistReviews.length} ${
-                  u.client.specialistReviews.length === 1 ? 'reseña' : 'reseñas'
-                })`
-              : 'Sin calificaciones'}
-          </p>
-
-            <p>
-              <a href="/publicar-trabajo">
-                Publicar trabajo
-              </a>
-            </p>
-
-            <p>
-              <a href="/mis-solicitudes">
-                Mis solicitudes
-              </a>
-            </p>
-          </>
-        )}
+                  <p><a href="/perfil-especialista">Completar mi perfil profesional</a></p>
+                  <p><a href="/trabajos-disponibles">Trabajos disponibles</a></p>
+                  <p><a href="/mis-trabajos">Mis trabajos</a></p>
+                </section>
+              )}
+            </>
+          )}
 
         <button
           onClick={() => {

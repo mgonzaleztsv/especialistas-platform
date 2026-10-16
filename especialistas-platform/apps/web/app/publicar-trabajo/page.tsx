@@ -122,6 +122,7 @@ export default function PublicarTrabajo() {
             step="0.01"
             value={form.budgetMin}
             onChange={(e) => updateField('budgetMin', e.target.value)}
+            onWheel={(e) => e.currentTarget.blur()}
           />
 
           <label>Presupuesto máximo (USD)</label>
@@ -131,6 +132,7 @@ export default function PublicarTrabajo() {
             step="0.01"
             value={form.budgetMax}
             onChange={(e) => updateField('budgetMax', e.target.value)}
+            onWheel={(e) => e.currentTarget.blur()}
           />
 
           <h2>Ubicación del trabajo</h2>

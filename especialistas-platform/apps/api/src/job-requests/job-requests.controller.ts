@@ -73,13 +73,30 @@ export class JobRequestsController {
       throw new Error('Esta solicitud ya no acepta propuestas');
     }
 
+    const amount = Number(body.amount);
+    const materialsAmount =
+      body.materialsAmount !== undefined && body.materialsAmount !== null
+        ? Number(body.materialsAmount)
+        : 0;
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('El precio de mano de obra debe ser mayor que cero');
+    }
+
+    if (!Number.isFinite(materialsAmount) || materialsAmount < 0) {
+      throw new Error('El importe de materiales no es válido');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const proposal = await tx.proposal.create({
         data: {
           jobRequestId,
           specialistId: specialist.id,
-          amount: Number(body.amount),
-          message: body.message || null,
+          amount,
+          materialsAmount,
+          includedScope: body.includedScope?.trim() || null,
+          excludedScope: body.excludedScope?.trim() || null,
+          message: body.message?.trim() || null,
           availableDate: body.availableDate
             ? new Date(body.availableDate)
             : null
@@ -147,6 +164,24 @@ export class JobRequestsController {
       }
 
       data.amount = amount;
+    }
+
+    if (body.materialsAmount !== undefined) {
+      const materialsAmount = Number(body.materialsAmount);
+
+      if (!Number.isFinite(materialsAmount) || materialsAmount < 0) {
+        throw new Error('El importe de materiales no es válido');
+      }
+
+      data.materialsAmount = materialsAmount;
+    }
+
+    if (body.includedScope !== undefined) {
+      data.includedScope = body.includedScope?.trim() || null;
+    }
+
+    if (body.excludedScope !== undefined) {
+      data.excludedScope = body.excludedScope?.trim() || null;
     }
 
     if (body.message !== undefined) {
@@ -413,33 +448,46 @@ export class JobRequestsController {
     return this.prisma.$transaction(async (tx) => {
       await tx.proposal.update({
         where: { id: proposalId },
-        data: { status: 'ACCEPTED' }
-      });
-
-      await tx.proposal.updateMany({
-        where: {
-          jobRequestId,
-          id: { not: proposalId },
-          status: 'PENDING'
-        },
-        data: { status: 'REJECTED' }
-      });
-
-      await tx.payment.create({
-        data: {
-          jobRequestId,
-          proposalId,
-          clientId: client.id,
-          specialistId: proposal.specialistId,
-          amount: proposal.amount,
-          currency: 'USD',
-          status: 'PENDING'
-        }
+        data: { status: 'SELECTED' }
       });
 
       await tx.jobRequest.update({
         where: { id: jobRequestId },
-        data: { status: 'AWAITING_PAYMENT' }
+        data: { status: 'PENDING_AGREEMENT' }
+      });
+
+      const latestWorkOrder = await tx.workOrder.findFirst({
+        where: { jobRequestId },
+        orderBy: { version: 'desc' },
+        select: { version: true }
+      });
+
+      const nextWorkOrderVersion =
+        (latestWorkOrder?.version ?? 0) + 1;
+
+      await tx.workOrder.create({
+        data: {
+          jobRequestId,
+          proposalId,
+          version: nextWorkOrderVersion,
+          status: 'PENDING_ACCEPTANCE',
+          title: jobRequest.title,
+          description: jobRequest.description,
+          includedScope: proposal.includedScope,
+          excludedScope: proposal.excludedScope,
+          city: jobRequest.city,
+          state: jobRequest.state,
+          zipcode: jobRequest.zipcode,
+          scheduledDate: proposal.availableDate ?? jobRequest.desiredDate,
+          laborAmount: proposal.amount,
+          materialsAmount: proposal.materialsAmount,
+          currency: 'USD',
+          templateVersion: '0.1',
+          respondingParty: 'CLIENT',
+          responseDeadline: new Date(
+            Date.now() + 48 * 60 * 60 * 1000
+          )
+        }
       });
 
       return tx.proposal.findUnique({
@@ -460,7 +508,737 @@ export class JobRequestsController {
     });
   }
 
-  @Post(':jobId/payment/confirm')
+  @Post(':jobId/proposals/:proposalId/unselect')
+  async unselectProposal(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string,
+    @Param('proposalId') proposalId: string
+  ) {
+    const client = await this.prisma.client.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!client) {
+      throw new Error('El usuario no tiene perfil de cliente');
+    }
+
+    const jobRequest = await this.prisma.jobRequest.findFirst({
+      where: {
+        id: jobRequestId,
+        clientId: client.id,
+        status: 'PENDING_AGREEMENT'
+      }
+    });
+
+    if (!jobRequest) {
+      throw new Error(
+        'La solicitud no existe, no pertenece al cliente o ya no permite retirar la selección'
+      );
+    }
+
+    const proposal = await this.prisma.proposal.findFirst({
+      where: {
+        id: proposalId,
+        jobRequestId,
+        status: 'SELECTED'
+      }
+    });
+
+    if (!proposal) {
+      throw new Error('La propuesta seleccionada no existe');
+    }
+
+    const workOrder = await this.prisma.workOrder.findFirst({
+      where: {
+        jobRequestId,
+        proposalId,
+        status: 'PENDING_ACCEPTANCE'
+      },
+      orderBy: {
+        version: 'desc'
+      }
+    });
+
+    if (!workOrder) {
+      throw new Error(
+        'No existe una Orden de Trabajo pendiente para esta selección'
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.workOrder.update({
+        where: { id: workOrder.id },
+        data: { status: 'CANCELLED' }
+      });
+
+      const updatedProposal = await tx.proposal.update({
+        where: { id: proposalId },
+        data: { status: 'PENDING' }
+      });
+
+      await tx.jobRequest.update({
+        where: { id: jobRequestId },
+        data: { status: 'RECEIVING_QUOTES' }
+      });
+
+      return updatedProposal;
+    });
+  }
+
+  @Get(':jobId/work-orders/history')
+  async getWorkOrderHistory(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string
+  ) {
+    const jobRequest = await this.prisma.jobRequest.findUnique({
+      where: { id: jobRequestId },
+      include: {
+        client: true
+      }
+    });
+
+    if (!jobRequest) {
+      throw new Error('La solicitud no existe');
+    }
+
+    const isClient =
+      jobRequest.client.userId === req.user.userId;
+
+    if (isClient) {
+      return this.prisma.workOrder.findMany({
+        where: {
+          jobRequestId
+        },
+        orderBy: {
+          version: 'asc'
+        },
+        include: {
+          proposal: {
+            include: {
+              specialist: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      name: true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!specialist) {
+      throw new Error(
+        'No tienes acceso al historial de esta Orden de Trabajo'
+      );
+    }
+
+    const history = await this.prisma.workOrder.findMany({
+      where: {
+        jobRequestId,
+        proposal: {
+          specialistId: specialist.id
+        }
+      },
+      orderBy: {
+        version: 'asc'
+      }
+    });
+
+    if (history.length === 0) {
+      throw new Error(
+        'No tienes acceso al historial de esta Orden de Trabajo'
+      );
+    }
+
+    return history;
+  }
+
+  @Get(':jobId/work-order')
+  async getWorkOrder(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string
+  ) {
+    const workOrder = await this.prisma.workOrder.findFirst({
+      where: {
+        jobRequestId,
+        status: {
+          in: ['PENDING_ACCEPTANCE', 'ACCEPTED']
+        }
+      },
+      orderBy: {
+        version: 'desc'
+      },
+      include: {
+        jobRequest: {
+          include: {
+            client: true
+          }
+        },
+        proposal: {
+          include: {
+            specialist: true
+          }
+        }
+      }
+    });
+
+    if (!workOrder) {
+      throw new Error('No existe una Orden de Trabajo para esta solicitud');
+    }
+
+    const isClient =
+      workOrder.jobRequest.client.userId === req.user.userId;
+
+    const isSpecialist =
+      workOrder.proposal.specialist.userId === req.user.userId;
+
+    if (!isClient && !isSpecialist) {
+      throw new Error('No tienes acceso a esta Orden de Trabajo');
+    }
+
+    return workOrder;
+  }
+
+  @Post(':jobId/work-order/revise')
+  async reviseWorkOrder(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string,
+    @Body() body: any
+  ) {
+    const workOrder = await this.prisma.workOrder.findFirst({
+      where: {
+        jobRequestId,
+        status: 'PENDING_ACCEPTANCE',
+        jobRequest: {
+          status: 'PENDING_AGREEMENT'
+        },
+        proposal: {
+          status: 'SELECTED'
+        }
+      },
+      orderBy: {
+        version: 'desc'
+      },
+      include: {
+        jobRequest: {
+          include: {
+            client: true
+          }
+        },
+        proposal: {
+          include: {
+            specialist: true
+          }
+        }
+      }
+    });
+
+    if (!workOrder) {
+      throw new Error(
+        'No existe una Orden de Trabajo pendiente que pueda revisarse'
+      );
+    }
+
+    const isClient =
+      workOrder.jobRequest.client.userId === req.user.userId;
+
+    const isSpecialist =
+      workOrder.proposal.specialist.userId === req.user.userId;
+
+    if (!isClient && !isSpecialist) {
+      throw new Error('No tienes permiso para revisar esta Orden de Trabajo');
+    }
+
+    const allowedFields = [
+      'includedScope',
+      'excludedScope',
+      'scheduledDate',
+      'laborAmount',
+      'materialsAmount'
+    ];
+
+    const hasChanges = allowedFields.some((field) =>
+      Object.prototype.hasOwnProperty.call(body, field)
+    );
+
+    if (!hasChanges) {
+      throw new Error('No se recibieron cambios para la Orden de Trabajo');
+    }
+
+    let scheduledDate = workOrder.scheduledDate;
+
+    if (Object.prototype.hasOwnProperty.call(body, 'scheduledDate')) {
+      if (body.scheduledDate === null || body.scheduledDate === '') {
+        scheduledDate = null;
+      } else {
+        const parsedDate = new Date(body.scheduledDate);
+
+        if (Number.isNaN(parsedDate.getTime())) {
+          throw new Error('La fecha programada no es válida');
+        }
+
+        scheduledDate = parsedDate;
+      }
+    }
+
+    const laborAmount =
+      Object.prototype.hasOwnProperty.call(body, 'laborAmount')
+        ? Number(body.laborAmount)
+        : Number(workOrder.laborAmount);
+
+    const materialsAmount =
+      Object.prototype.hasOwnProperty.call(body, 'materialsAmount')
+        ? Number(body.materialsAmount)
+        : Number(workOrder.materialsAmount);
+
+    if (!Number.isFinite(laborAmount) || laborAmount < 0) {
+      throw new Error('El importe de mano de obra no es válido');
+    }
+
+    if (!Number.isFinite(materialsAmount) || materialsAmount < 0) {
+      throw new Error('El importe de materiales no es válido');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.workOrder.findUnique({
+        where: { id: workOrder.id }
+      });
+
+      if (!current || current.status !== 'PENDING_ACCEPTANCE') {
+  throw new Error(
+    'La Orden de Trabajo ya cambió y no puede revisarse'
+  );
+}
+
+if (
+  current.responseDeadline &&
+  new Date() >= current.responseDeadline
+) {
+  throw new Error(
+    'El plazo para modificar esta Orden de Trabajo ha vencido'
+  );
+}
+
+      const latestWorkOrder = await tx.workOrder.findFirst({
+        where: { jobRequestId },
+        orderBy: { version: 'desc' },
+        select: { version: true }
+      });
+
+      const nextWorkOrderVersion =
+        (latestWorkOrder?.version ?? 0) + 1;
+
+      await tx.workOrder.update({
+        where: { id: workOrder.id },
+        data: { status: 'SUPERSEDED' }
+      });
+
+      return tx.workOrder.create({
+        data: {
+          jobRequestId,
+          proposalId: workOrder.proposalId,
+          version: nextWorkOrderVersion,
+          status: 'PENDING_ACCEPTANCE',
+          title: workOrder.title,
+          description: workOrder.description,
+          includedScope:
+            Object.prototype.hasOwnProperty.call(body, 'includedScope')
+              ? body.includedScope
+              : workOrder.includedScope,
+          excludedScope:
+            Object.prototype.hasOwnProperty.call(body, 'excludedScope')
+              ? body.excludedScope
+              : workOrder.excludedScope,
+          city: workOrder.city,
+          state: workOrder.state,
+          zipcode: workOrder.zipcode,
+          scheduledDate,
+          laborAmount,
+          materialsAmount,
+          currency: workOrder.currency,
+          templateVersion: workOrder.templateVersion,
+          respondingParty: isClient ? 'SPECIALIST' : 'CLIENT',
+          responseDeadline: new Date(
+            Date.now() + 48 * 60 * 60 * 1000
+          )
+        }
+      });
+    });
+  }
+
+  @Post(':jobId/work-order/accept')
+  async acceptWorkOrder(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string
+  ) {
+    const workOrder = await this.prisma.workOrder.findFirst({
+      where: {
+        jobRequestId,
+        status: 'PENDING_ACCEPTANCE',
+        jobRequest: {
+          status: 'PENDING_AGREEMENT'
+        },
+        proposal: {
+          status: 'SELECTED'
+        }
+      },
+      orderBy: {
+        version: 'desc'
+      },
+      include: {
+        jobRequest: {
+          include: {
+            client: true
+          }
+        },
+        proposal: {
+          include: {
+            specialist: true
+          }
+        }
+      }
+    });
+
+    if (!workOrder) {
+      throw new Error(
+        'No existe una Orden de Trabajo pendiente de aceptación'
+      );
+    }
+
+    const isClient =
+      workOrder.jobRequest.client.userId === req.user.userId;
+
+    const isSpecialist =
+      workOrder.proposal.specialist.userId === req.user.userId;
+
+    if (!isClient && !isSpecialist) {
+      throw new Error('No tienes permiso para aceptar esta Orden de Trabajo');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const current = await tx.workOrder.findUnique({
+        where: { id: workOrder.id }
+      });
+
+      if (!current) {
+  throw new Error('La Orden de Trabajo ya no existe');
+}
+
+if (current.status !== 'PENDING_ACCEPTANCE') {
+  throw new Error(
+    'Esta Orden de Trabajo ya no está pendiente de aceptación'
+  );
+}
+
+if (
+  current.responseDeadline &&
+  new Date() >= current.responseDeadline
+) {
+  throw new Error(
+    'El plazo para aceptar esta Orden de Trabajo ha vencido'
+  );
+}
+
+const data: any = {};
+
+      if (isClient && !current.clientAcceptedAt) {
+        data.clientAcceptedAt = new Date();
+      }
+
+      if (isSpecialist && !current.specialistAcceptedAt) {
+        data.specialistAcceptedAt = new Date();
+      }
+
+      const updated = await tx.workOrder.update({
+        where: { id: workOrder.id },
+        data
+      });
+
+      if (
+        updated.clientAcceptedAt &&
+        updated.specialistAcceptedAt
+      ) {
+        await tx.workOrder.update({
+          where: { id: workOrder.id },
+          data: { status: 'ACCEPTED' }
+        });
+
+        await tx.proposal.update({
+          where: { id: workOrder.proposalId },
+          data: { status: 'ACCEPTED' }
+        });
+
+        await tx.proposal.updateMany({
+          where: {
+            jobRequestId,
+            id: { not: workOrder.proposalId },
+            status: 'PENDING'
+          },
+          data: { status: 'REJECTED' }
+        });
+
+        const existingPayment = await tx.payment.findUnique({
+          where: { jobRequestId }
+        });
+
+        if (!existingPayment) {
+          await tx.payment.create({
+            data: {
+              jobRequestId,
+              proposalId: workOrder.proposalId,
+              clientId: workOrder.jobRequest.clientId,
+              specialistId: workOrder.proposal.specialistId,
+              amount:
+                Number(updated.laborAmount) +
+                Number(updated.materialsAmount),
+              currency: updated.currency,
+              status: 'PENDING'
+            }
+          });
+        }
+
+        await tx.jobRequest.update({
+          where: { id: jobRequestId },
+          data: { status: 'AWAITING_PAYMENT' }
+        });
+      }
+
+      return tx.workOrder.findUnique({
+        where: { id: workOrder.id }
+      });
+    });
+  }
+    @Post(':jobId/work-order/extension/request')
+  async requestWorkOrderExtension(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const workOrder = await tx.workOrder.findFirst({
+        where: {
+          jobRequestId,
+          status: 'PENDING_ACCEPTANCE',
+          jobRequest: {
+            status: 'PENDING_AGREEMENT'
+          },
+          proposal: {
+            status: 'SELECTED'
+          }
+        },
+        orderBy: { version: 'desc' },
+        include: {
+          jobRequest: { include: { client: true } },
+          proposal: { include: { specialist: true } }
+        }
+      });
+
+      if (!workOrder) {
+        throw new Error('No existe una negociación activa');
+      }
+
+      const isClient =
+        workOrder.jobRequest.client.userId === req.user.userId;
+
+      const isSpecialist =
+        workOrder.proposal.specialist.userId === req.user.userId;
+
+      if (!isClient && !isSpecialist) {
+        throw new Error('No tienes permiso para solicitar la prórroga');
+      }
+
+      if (
+        (workOrder.respondingParty === 'CLIENT' && !isClient) ||
+        (workOrder.respondingParty === 'SPECIALIST' && !isSpecialist)
+      ) {
+        throw new Error(
+          'Sólo la parte que debe responder puede solicitar la prórroga'
+        );
+      }
+
+      if (
+        !workOrder.responseDeadline ||
+        new Date() >= workOrder.responseDeadline
+      ) {
+        throw new Error('El plazo de negociación ya venció');
+      }
+
+      const approvedExtension = await tx.workOrder.findFirst({
+  where: {
+    jobRequestId,
+    extensionApprovedAt: { not: null }
+  }
+});
+
+if (approvedExtension) {
+  throw new Error(
+    'Ya se concedió la única prórroga permitida en esta negociación'
+  );
+}
+
+if (
+  workOrder.extensionRequestedAt &&
+  !workOrder.extensionRejectedAt
+) {
+  throw new Error(
+    'Ya existe una solicitud de prórroga pendiente de respuesta'
+  );
+}
+
+const result = await tx.workOrder.updateMany({
+  where: {
+    id: workOrder.id,
+    status: 'PENDING_ACCEPTANCE',
+    extensionApprovedAt: null,
+    responseDeadline: { gt: new Date() },
+    OR: [
+      { extensionRequestedAt: null },
+      { extensionRejectedAt: { not: null } }
+    ]
+  },
+  data: {
+    extensionRequestedAt: new Date(),
+    extensionRejectedAt: null
+  }
+});
+      if (result.count !== 1) {
+        throw new Error(
+          'No fue posible registrar la solicitud de prórroga'
+        );
+      }
+
+      return {
+        message: 'Solicitud de prórroga registrada. Pendiente de aprobación.',
+        workOrderId: workOrder.id
+      };
+    });
+  }
+  @Post(':jobId/work-order/extension/respond')
+  async respondWorkOrderExtension(
+    @Req() req: any,
+    @Param('jobId') jobRequestId: string,
+    @Body() body: any
+  ) {
+    if (
+      typeof body?.approve !== 'boolean'
+    ) {
+      throw new Error('Debes indicar approve: true o false');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const workOrder = await tx.workOrder.findFirst({
+        where: {
+          jobRequestId,
+          status: 'PENDING_ACCEPTANCE',
+          jobRequest: { status: 'PENDING_AGREEMENT' },
+          proposal: { status: 'SELECTED' }
+        },
+        orderBy: { version: 'desc' },
+        include: {
+          jobRequest: { include: { client: true } },
+          proposal: { include: { specialist: true } }
+        }
+      });
+
+      if (!workOrder) {
+        throw new Error('No existe una negociación activa');
+      }
+
+      const isClient =
+        workOrder.jobRequest.client.userId === req.user.userId;
+
+      const isSpecialist =
+        workOrder.proposal.specialist.userId === req.user.userId;
+
+      const authorized =
+        (workOrder.respondingParty === 'CLIENT' && isSpecialist) ||
+        (workOrder.respondingParty === 'SPECIALIST' && isClient);
+
+      if (!authorized) {
+        throw new Error(
+          'Sólo la contraparte puede responder a la solicitud'
+        );
+      }
+
+      if (
+        !workOrder.extensionRequestedAt ||
+        workOrder.extensionRejectedAt ||
+        workOrder.extensionApprovedAt
+      ) {
+        throw new Error(
+          'No existe una solicitud de prórroga pendiente'
+        );
+      }
+
+      if (
+        !workOrder.responseDeadline ||
+        new Date() >= workOrder.responseDeadline
+      ) {
+        throw new Error('El plazo original ya venció');
+      }
+
+      if (body.approve) {
+        const previousApproval = await tx.workOrder.findFirst({
+          where: {
+            jobRequestId,
+            extensionApprovedAt: { not: null }
+          }
+        });
+
+        if (previousApproval) {
+          throw new Error(
+            'Ya se concedió una prórroga en esta negociación'
+          );
+        }
+      }
+
+      const now = new Date();
+
+      const result = await tx.workOrder.updateMany({
+        where: {
+          id: workOrder.id,
+          status: 'PENDING_ACCEPTANCE',
+          extensionRequestedAt: { not: null },
+          extensionApprovedAt: null,
+          extensionRejectedAt: null,
+          responseDeadline: { gt: now }
+        },
+        data: body.approve
+          ? {
+              extensionApprovedAt: now,
+              responseDeadline: new Date(
+                workOrder.responseDeadline.getTime() +
+                24 * 60 * 60 * 1000
+              )
+            }
+          : {
+              extensionRejectedAt: now
+            }
+      });
+
+      if (result.count !== 1) {
+        throw new Error(
+          'La solicitud ya fue respondida o cambió de estado'
+        );
+      }
+
+      return {
+        message: body.approve
+          ? 'Prórroga de 24 horas aprobada'
+          : 'Prórroga rechazada',
+        workOrderId: workOrder.id
+      };
+    });
+  }
+    @Post(':jobId/payment/confirm')
   async confirmPayment(
     @Req() req: any,
     @Param('jobId') jobRequestId: string
@@ -657,6 +1435,8 @@ export class JobRequestsController {
       where: {
         status: {
           in: [
+            'PENDING_AGREEMENT',
+            'AWAITING_PAYMENT',
             'ASSIGNED',
             'IN_PROGRESS',
             'AWAITING_CLIENT_CONFIRMATION',
@@ -669,7 +1449,9 @@ export class JobRequestsController {
         proposals: {
           some: {
             specialistId: specialist.id,
-            status: 'ACCEPTED'
+            status: {
+              in: ['SELECTED', 'ACCEPTED']
+            }
           }
         }
       },
@@ -693,7 +1475,9 @@ export class JobRequestsController {
         proposals: {
           where: {
             specialistId: specialist.id,
-            status: 'ACCEPTED'
+            status: {
+              in: ['SELECTED', 'ACCEPTED']
+            }
           },
           select: {
             id: true,

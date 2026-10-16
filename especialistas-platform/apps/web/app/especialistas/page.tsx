@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { API } from '../../lib/api';
+import { API, api } from '../../lib/api';
 
 export default function Specialists() {
   const [items, setItems] = useState<any[]>([]);
@@ -9,6 +9,10 @@ export default function Specialists() {
   const [category, setCategory] = useState('');
   const [city, setCity] = useState('');
   const [error, setError] = useState('');
+  const [accessChecked, setAccessChecked] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [canSearch, setCanSearch] = useState(false);
+  const [hasClientProfile, setHasClientProfile] = useState(false);
 
   async function loadSpecialists() {
     try {
@@ -19,16 +23,10 @@ export default function Specialists() {
       if (category) params.set('category', category);
       if (city.trim()) params.set('city', city.trim());
 
-      const url =
-        API + '/specialists' + (params.toString() ? `?${params}` : '');
+      const path =
+        '/specialists' + (params.toString() ? `?${params}` : '');
 
-      const r = await fetch(url);
-
-      if (!r.ok) {
-        throw new Error('No se pudo cargar el directorio.');
-      }
-
-      const data = await r.json();
+      const data = await api(path);
       setItems(data);
     } catch (e: any) {
       setError(e.message);
@@ -36,22 +34,133 @@ export default function Specialists() {
   }
 
   useEffect(() => {
-    fetch(API + '/categories')
-      .then((r) => r.json())
-      .then(setCategories)
-      .catch(() => setCategories([]));
+    const token = localStorage.getItem('token');
 
-    loadSpecialists();
+    if (!token) {
+      setAccessChecked(true);
+      return;
+    }
+
+    setLoggedIn(true);
+
+    api('/users/me')
+      .then((user) => {
+        const hasClientAccess = user.client?.status === 'ACTIVE';
+        setHasClientProfile(Boolean(user.client));
+        setCanSearch(hasClientAccess);
+
+        if (hasClientAccess) {
+          fetch(API + '/categories')
+            .then((r) => r.json())
+            .then(setCategories)
+            .catch(() => setCategories([]));
+
+          loadSpecialists();
+        }
+      })
+      .catch(() => {
+        setLoggedIn(false);
+        setCanSearch(false);
+      })
+      .finally(() => setAccessChecked(true));
   }, []);
 
-  function clearFilters() {
+  async function enableClient() {
+    setError('');
+
+    try {
+      await api('/users/me/enable-client', {
+        method: 'POST'
+      });
+
+      window.location.reload();
+    } catch (e: any) {
+      setError(e.message || 'No se pudo habilitar la función de contratación.');
+    }
+  }
+
+  async function clearFilters() {
     setCategory('');
     setCity('');
+    setError('');
 
-    fetch(API + '/specialists')
-      .then((r) => r.json())
-      .then(setItems)
-      .catch((e) => setError(e.message));
+    try {
+      const data = await api('/specialists');
+      setItems(data);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  if (!accessChecked) {
+    return (
+      <main className="wrap">
+        <p>Comprobando acceso...</p>
+      </main>
+    );
+  }
+
+  if (!loggedIn) {
+    return (
+      <main className="wrap">
+        <h1>Buscar especialistas</h1>
+        <div className="card">
+          <p>
+            Para consultar el directorio y contratar especialistas necesitas
+            iniciar sesión con una cuenta que tenga capacidad de contratación.
+          </p>
+          <p>
+            <a href="/login">Entrar</a>
+            {' · '}
+            <a href="/register">Crear cuenta</a>
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!canSearch) {
+    return (
+      <main className="wrap">
+        <h1>Acceso al directorio</h1>
+        <div className="card">
+          {hasClientProfile ? (
+            <>
+              <p>
+                Tu perfil de contratación todavía no está activo.
+              </p>
+              <p>
+                Para consultar el directorio y contratar especialistas necesitas
+                completar el proceso de verificación de tu cuenta.
+              </p>
+              <p>
+                <a href="/dashboard">Completar perfil de contratación</a>
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                Tu cuenta está configurada para ofrecer servicios.
+              </p>
+              <p>
+                Si también deseas contratar especialistas, puedes iniciar tu
+                registro como cliente.
+              </p>
+              <p>
+                <button type="button" onClick={enableClient}>
+                  Quiero contratar especialistas
+                </button>
+              </p>
+              {error && <p>{error}</p>}
+            </>
+          )}
+
+          <p>
+            <a href="/dashboard">Volver a mi panel</a>
+          </p>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -132,7 +241,7 @@ export default function Specialists() {
 
               <p>
                 <strong>Disponibilidad:</strong>{' '}
-                {s.availabilityStatus === 'DISPONIBLE'
+                {s.availabilityStatus === 'AVAILABLE'
                   ? 'Disponible'
                   : s.availabilityStatus}
               </p>
@@ -143,9 +252,6 @@ export default function Specialists() {
                 </p>
               )}
 
-              <p>
-                <strong>Confianza:</strong> {s.trustScore}%
-              </p>
 
               <p>
                 <strong>Calificación:</strong>{' '}

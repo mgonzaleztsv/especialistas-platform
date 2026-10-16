@@ -1,0 +1,5 @@
+-- CreateEnum
+CREATE TYPE "ClientStatus" AS ENUM ('INCOMPLETE', 'PENDING_VERIFICATION', 'ACTIVE', 'SUSPENDED');
+
+-- AlterTable
+ALTER TABLE "Client" ADD COLUMN     "status" "ClientStatus" NOT NULL DEFAULT 'INCOMPLETE';

@@ -25,6 +25,13 @@ enum VerificationStatus {
   REJECTED
 }
 
+enum ClientStatus {
+  INCOMPLETE
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
 model User {
   id           String      @id @default(uuid())
   name         String
@@ -47,6 +54,7 @@ model Client {
   id          String       @id @default(uuid())
   userId      String       @unique
   clientType  String       @default("INDIVIDUAL")
+  status      ClientStatus @default(INCOMPLETE)
   companyName String?
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   jobRequests JobRequest[]
@@ -133,6 +141,7 @@ enum JobRequestStatus {
   DRAFT
   PUBLISHED
   RECEIVING_QUOTES
+  PENDING_AGREEMENT
   AWAITING_PAYMENT
   ASSIGNED
   IN_PROGRESS
@@ -166,6 +175,7 @@ model JobRequest {
   messages         Message[]
   payment            Payment?
   terminationRequest TerminationRequest?
+  workOrders         WorkOrder[]
 }
 
 model Message {
@@ -185,6 +195,7 @@ model Message {
 
 enum ProposalStatus {
   PENDING
+  SELECTED
   ACCEPTED
   REJECTED
   WITHDRAWN
@@ -194,10 +205,13 @@ model Proposal {
   id            String         @id @default(uuid())
   jobRequestId  String
   specialistId  String
-  amount        Decimal        @db.Decimal(10, 2)
-  message       String?
-  availableDate DateTime?
-  status        ProposalStatus @default(PENDING)
+  amount          Decimal        @db.Decimal(10, 2)
+  materialsAmount Decimal        @default(0) @db.Decimal(10, 2)
+  includedScope   String?
+  excludedScope   String?
+  message         String?
+  availableDate   DateTime?
+  status          ProposalStatus @default(PENDING)
 
   jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
   specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Cascade)
@@ -206,7 +220,75 @@ model Proposal {
   updatedAt DateTime @updatedAt
 
   @@unique([jobRequestId, specialistId])
-  payment Payment?
+  payment    Payment?
+  workOrders WorkOrder[]
+}
+
+enum WorkOrderStatus {
+  PENDING_ACCEPTANCE
+  ACCEPTED
+  SUPERSEDED
+  CANCELLED
+}
+
+enum WorkOrderRespondingParty {
+  CLIENT
+  SPECIALIST
+}
+
+enum WorkOrderClosureReason {
+  CLIENT_REJECTED
+  SPECIALIST_WITHDREW
+  RESPONSE_DEADLINE_EXPIRED
+}
+
+model WorkOrder {
+  id                   String          @id @default(uuid())
+  jobRequestId         String
+  proposalId           String
+  version              Int
+  status               WorkOrderStatus @default(PENDING_ACCEPTANCE)
+
+  title                String
+  description          String
+  includedScope        String?
+  excludedScope        String?
+
+  city                 String
+  state                String
+  zipcode              String?
+  scheduledDate        DateTime?
+
+  laborAmount          Decimal         @db.Decimal(10, 2)
+  materialsAmount      Decimal         @default(0) @db.Decimal(10, 2)
+  currency             String          @default("USD")
+
+  templateVersion      String          @default("0.1")
+
+  clientAcceptedAt     DateTime?
+  specialistAcceptedAt DateTime?
+
+respondingParty      WorkOrderRespondingParty?
+  responseDeadline     DateTime?
+
+  extensionRequestedAt DateTime?
+  extensionApprovedAt  DateTime?
+  extensionRejectedAt  DateTime?
+
+  reminder24SentAt     DateTime?
+  reminder42SentAt     DateTime?
+
+  closedAt             DateTime?
+  closureReason        WorkOrderClosureReason?
+  jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  proposal   Proposal   @relation(fields: [proposalId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([jobRequestId, version])
+  @@index([proposalId])
+  @@index([status])
 }
 
 enum PaymentStatus {
