@@ -246,6 +246,7 @@ model WorkOrder {
   id                   String          @id @default(uuid())
   jobRequestId         String
   proposalId           String
+  negotiationId        String?
   version              Int
   status               WorkOrderStatus @default(PENDING_ACCEPTANCE)
 

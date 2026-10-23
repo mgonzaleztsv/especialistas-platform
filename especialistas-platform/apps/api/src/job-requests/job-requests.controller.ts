@@ -1,12 +1,45 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, ConflictException, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
 
 @Controller('job-requests')
 @UseGuards(JwtAuthGuard)
 export class JobRequestsController {
   constructor(private prisma: PrismaService) {}
+  private isTransactionConflict(error: unknown): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2034'
+    );
+  }
+
+  private async retryTransaction<T>(
+  operation: () => Promise<T>
+): Promise<T> {
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!this.isTransactionConflict(error)) {
+        throw error;
+      }
+
+      if (attempt === maxAttempts) {
+        throw new ConflictException(
+          'La operación entró en conflicto con otro cambio. Actualiza e intenta nuevamente.'
+        );
+      }
+    }
+  }
+
+  throw new Error(
+    'No fue posible completar la operación'
+  );
+}
 
   @Post()
   async create(@Req() req: any, @Body() body: any) {
@@ -353,53 +386,58 @@ export class JobRequestsController {
       throw new Error('El usuario no tiene perfil de cliente');
     }
 
-    const proposal = await this.prisma.proposal.findFirst({
-      where: {
-        id: proposalId,
-        jobRequestId,
-        status: 'PENDING',
-        jobRequest: {
-          clientId: client.id,
-          status: {
-            in: ['PUBLISHED', 'RECEIVING_QUOTES']
-          }
-        }
-      }
-    });
-
-    if (!proposal) {
-      throw new Error(
-        'La propuesta no existe, no te pertenece o ya no puede rechazarse'
-      );
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      const updatedProposal = await tx.proposal.update({
-        where: { id: proposal.id },
-        data: { status: 'REJECTED' }
-      });
-
-      const pendingCount = await tx.proposal.count({
-        where: {
-          jobRequestId,
-          status: 'PENDING'
-        }
-      });
-
-      if (pendingCount === 0) {
-        await tx.jobRequest.updateMany({
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
+        const jobRequest = await tx.jobRequest.findFirst({
           where: {
             id: jobRequestId,
-            status: 'RECEIVING_QUOTES'
-          },
-          data: {
-            status: 'PUBLISHED'
+            clientId: client.id,
+            status: { in: ['PUBLISHED', 'RECEIVING_QUOTES'] }
           }
         });
-      }
 
-      return updatedProposal;
-    });
+        if (!jobRequest) {
+          throw new Error('La solicitud ya no permite rechazar propuestas');
+        }
+
+        const proposalResult = await tx.proposal.updateMany({
+          where: {
+            id: proposalId,
+            jobRequestId,
+            status: 'PENDING'
+          },
+          data: { status: 'REJECTED' }
+        });
+
+        if (proposalResult.count !== 1) {
+          throw new Error('La propuesta ya no está pendiente');
+        }
+
+        const pendingCount = await tx.proposal.count({
+          where: {
+            jobRequestId,
+            status: 'PENDING'
+          }
+        });
+
+        if (pendingCount === 0) {
+          await tx.jobRequest.updateMany({
+            where: {
+              id: jobRequestId,
+              clientId: client.id,
+              status: 'RECEIVING_QUOTES'
+            },
+            data: { status: 'PUBLISHED' }
+          });
+        }
+
+        return tx.proposal.findUniqueOrThrow({
+          where: { id: proposalId }
+        });
+      }, {
+        isolationLevel: 'Serializable'
+      })
+    );
   }
 
   @Post(':jobId/proposals/:proposalId/accept')
@@ -416,96 +454,113 @@ export class JobRequestsController {
       throw new Error('El usuario no tiene perfil de cliente');
     }
 
-    const jobRequest = await this.prisma.jobRequest.findFirst({
-      where: {
-        id: jobRequestId,
-        clientId: client.id
-      }
-    });
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
+        const jobRequest = await tx.jobRequest.findFirst({
+          where: {
+            id: jobRequestId,
+            clientId: client.id,
+            status: { in: ['PUBLISHED', 'RECEIVING_QUOTES'] }
+          }
+        });
 
-    if (!jobRequest) {
-      throw new Error('La solicitud no existe o no pertenece al cliente');
-    }
-
-    if (
-      !['PUBLISHED', 'RECEIVING_QUOTES'].includes(jobRequest.status)
-    ) {
-      throw new Error('Este trabajo ya no acepta propuestas');
-    }
-
-    const proposal = await this.prisma.proposal.findFirst({
-      where: {
-        id: proposalId,
-        jobRequestId,
-        status: 'PENDING'
-      }
-    });
-
-    if (!proposal) {
-      throw new Error('La propuesta no existe');
-    }
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.proposal.update({
-        where: { id: proposalId },
-        data: { status: 'SELECTED' }
-      });
-
-      await tx.jobRequest.update({
-        where: { id: jobRequestId },
-        data: { status: 'PENDING_AGREEMENT' }
-      });
-
-      const latestWorkOrder = await tx.workOrder.findFirst({
-        where: { jobRequestId },
-        orderBy: { version: 'desc' },
-        select: { version: true }
-      });
-
-      const nextWorkOrderVersion =
-        (latestWorkOrder?.version ?? 0) + 1;
-
-      await tx.workOrder.create({
-        data: {
-          jobRequestId,
-          proposalId,
-          version: nextWorkOrderVersion,
-          status: 'PENDING_ACCEPTANCE',
-          title: jobRequest.title,
-          description: jobRequest.description,
-          includedScope: proposal.includedScope,
-          excludedScope: proposal.excludedScope,
-          city: jobRequest.city,
-          state: jobRequest.state,
-          zipcode: jobRequest.zipcode,
-          scheduledDate: proposal.availableDate ?? jobRequest.desiredDate,
-          laborAmount: proposal.amount,
-          materialsAmount: proposal.materialsAmount,
-          currency: 'USD',
-          templateVersion: '0.1',
-          respondingParty: 'CLIENT',
-          responseDeadline: new Date(
-            Date.now() + 48 * 60 * 60 * 1000
-          )
+        if (!jobRequest) {
+          throw new ConflictException('La solicitud ya no acepta propuestas');
         }
-      });
 
-      return tx.proposal.findUnique({
-        where: { id: proposalId },
-        include: {
-          specialist: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  name: true
+        const proposal = await tx.proposal.findFirst({
+          where: {
+            id: proposalId,
+            jobRequestId,
+            status: 'PENDING'
+          }
+        });
+
+        if (!proposal) {
+          throw new ConflictException('La propuesta ya no está disponible');
+        }
+
+        const jobResult = await tx.jobRequest.updateMany({
+          where: {
+            id: jobRequestId,
+            clientId: client.id,
+            status: { in: ['PUBLISHED', 'RECEIVING_QUOTES'] }
+          },
+          data: { status: 'PENDING_AGREEMENT' }
+        });
+
+        if (jobResult.count !== 1) {
+          throw new ConflictException('Otro proceso ya seleccionó una propuesta');
+        }
+
+        const proposalResult = await tx.proposal.updateMany({
+          where: {
+            id: proposalId,
+            jobRequestId,
+            status: 'PENDING'
+          },
+          data: { status: 'SELECTED' }
+        });
+
+        if (proposalResult.count !== 1) {
+          throw new ConflictException('La propuesta cambió de estado');
+        }
+
+        const latestWorkOrder = await tx.workOrder.findFirst({
+          where: { jobRequestId },
+          orderBy: { version: 'desc' },
+          select: { version: true }
+        });
+
+        const nextWorkOrderVersion =
+          (latestWorkOrder?.version ?? 0) + 1;
+
+        await tx.workOrder.create({
+          data: {
+            jobRequestId,
+            proposalId,
+            negotiationId: crypto.randomUUID(),
+            version: nextWorkOrderVersion,
+            status: 'PENDING_ACCEPTANCE',
+            title: jobRequest.title,
+            description: jobRequest.description,
+            includedScope: proposal.includedScope,
+            excludedScope: proposal.excludedScope,
+            city: jobRequest.city,
+            state: jobRequest.state,
+            zipcode: jobRequest.zipcode,
+            scheduledDate:
+              proposal.availableDate ?? jobRequest.desiredDate,
+            laborAmount: proposal.amount,
+            materialsAmount: proposal.materialsAmount,
+            currency: 'USD',
+            templateVersion: '0.1',
+            respondingParty: 'CLIENT',
+            responseDeadline: new Date(
+              Date.now() + 48 * 60 * 60 * 1000
+            )
+          }
+        });
+
+        return tx.proposal.findUnique({
+          where: { id: proposalId },
+          include: {
+            specialist: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
                 }
               }
             }
           }
-        }
-      });
-    });
+        });
+      }, {
+        isolationLevel: 'Serializable'
+      })
+    );
   }
 
   @Post(':jobId/proposals/:proposalId/unselect')
@@ -522,67 +577,93 @@ export class JobRequestsController {
       throw new Error('El usuario no tiene perfil de cliente');
     }
 
-    const jobRequest = await this.prisma.jobRequest.findFirst({
-      where: {
-        id: jobRequestId,
-        clientId: client.id,
-        status: 'PENDING_AGREEMENT'
-      }
-    });
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
+        const jobRequest = await tx.jobRequest.findFirst({
+          where: {
+            id: jobRequestId,
+            clientId: client.id,
+            status: 'PENDING_AGREEMENT'
+          }
+        });
 
-    if (!jobRequest) {
-      throw new Error(
-        'La solicitud no existe, no pertenece al cliente o ya no permite retirar la selección'
-      );
-    }
+        if (!jobRequest) {
+          throw new ConflictException(
+            'La solicitud ya no permite retirar la selección'
+          );
+        }
 
-    const proposal = await this.prisma.proposal.findFirst({
-      where: {
-        id: proposalId,
-        jobRequestId,
-        status: 'SELECTED'
-      }
-    });
+        const proposal = await tx.proposal.findFirst({
+          where: {
+            id: proposalId,
+            jobRequestId,
+            status: 'SELECTED'
+          }
+        });
 
-    if (!proposal) {
-      throw new Error('La propuesta seleccionada no existe');
-    }
+        if (!proposal) {
+          throw new ConflictException('La propuesta ya no está seleccionada');
+        }
 
-    const workOrder = await this.prisma.workOrder.findFirst({
-      where: {
-        jobRequestId,
-        proposalId,
-        status: 'PENDING_ACCEPTANCE'
-      },
-      orderBy: {
-        version: 'desc'
-      }
-    });
+        const workOrder = await tx.workOrder.findFirst({
+          where: {
+            jobRequestId,
+            proposalId
+          },
+          orderBy: { version: 'desc' }
+        });
 
-    if (!workOrder) {
-      throw new Error(
-        'No existe una Orden de Trabajo pendiente para esta selección'
-      );
-    }
+        if (!workOrder || workOrder.status !== 'PENDING_ACCEPTANCE') {
+          throw new ConflictException(
+            'La Orden de Trabajo ya no permite retirar la selección'
+          );
+        }
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.workOrder.update({
-        where: { id: workOrder.id },
-        data: { status: 'CANCELLED' }
-      });
+        const result = await tx.workOrder.updateMany({
+          where: {
+            id: workOrder.id,
+            status: 'PENDING_ACCEPTANCE'
+          },
+          data: { status: 'CANCELLED' }
+        });
 
-      const updatedProposal = await tx.proposal.update({
-        where: { id: proposalId },
-        data: { status: 'PENDING' }
-      });
+        if (result.count !== 1) {
+          throw new ConflictException('La Orden de Trabajo cambió de estado');
+        }
 
-      await tx.jobRequest.update({
-        where: { id: jobRequestId },
-        data: { status: 'RECEIVING_QUOTES' }
-      });
+        const proposalResult = await tx.proposal.updateMany({
+          where: {
+            id: proposalId,
+            jobRequestId,
+            status: 'SELECTED'
+          },
+          data: { status: 'PENDING' }
+        });
 
-      return updatedProposal;
-    });
+        if (proposalResult.count !== 1) {
+          throw new ConflictException('La propuesta cambió de estado');
+        }
+
+        const jobResult = await tx.jobRequest.updateMany({
+          where: {
+            id: jobRequestId,
+            clientId: client.id,
+            status: 'PENDING_AGREEMENT'
+          },
+          data: { status: 'RECEIVING_QUOTES' }
+        });
+
+        if (jobResult.count !== 1) {
+          throw new ConflictException('La solicitud cambió de estado');
+        }
+
+        return tx.proposal.findUnique({
+          where: { id: proposalId }
+        });
+      }, {
+        isolationLevel: 'Serializable'
+      })
+    );
   }
 
   @Get(':jobId/work-orders/history')
@@ -808,7 +889,8 @@ export class JobRequestsController {
       throw new Error('El importe de materiales no es válido');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
       const current = await tx.workOrder.findUnique({
         where: { id: workOrder.id }
       });
@@ -834,18 +916,60 @@ if (
         select: { version: true }
       });
 
-      const nextWorkOrderVersion =
-        (latestWorkOrder?.version ?? 0) + 1;
+      if (
+        !latestWorkOrder ||
+        latestWorkOrder.version !== current.version
+      ) {
+        throw new Error(
+          'Existe una versión más reciente de la Orden de Trabajo'
+        );
+      }
 
-      await tx.workOrder.update({
-        where: { id: workOrder.id },
+      const jobRequest = await tx.jobRequest.findUnique({
+        where: { id: jobRequestId },
+        select: { status: true }
+      });
+
+      if (jobRequest?.status !== 'PENDING_AGREEMENT') {
+        throw new Error(
+          'La solicitud de servicio ya no está en negociación'
+        );
+      }
+
+      const proposal = await tx.proposal.findUnique({
+        where: { id: current.proposalId },
+        select: { status: true }
+      });
+
+      if (proposal?.status !== 'SELECTED') {
+        throw new Error(
+          'La propuesta ya no está seleccionada'
+        );
+      }
+
+      const nextWorkOrderVersion =
+        latestWorkOrder.version + 1;
+
+      const result = await tx.workOrder.updateMany({
+        where: {
+          id: current.id,
+          status: 'PENDING_ACCEPTANCE',
+          responseDeadline: { gt: new Date() }
+        },
         data: { status: 'SUPERSEDED' }
       });
+
+      if (result.count !== 1) {
+        throw new Error(
+          'La Orden de Trabajo cambió o su plazo ha vencido'
+        );
+      }
 
       return tx.workOrder.create({
         data: {
           jobRequestId,
           proposalId: workOrder.proposalId,
+          negotiationId: workOrder.negotiationId,
           version: nextWorkOrderVersion,
           status: 'PENDING_ACCEPTANCE',
           title: workOrder.title,
@@ -872,7 +996,10 @@ if (
           )
         }
       });
-    });
+      }, {
+        isolationLevel: 'Serializable'
+      })
+    );
   }
 
   @Post(':jobId/work-order/accept')
@@ -909,7 +1036,7 @@ if (
     });
 
     if (!workOrder) {
-      throw new Error(
+      throw new ConflictException(
         'No existe una Orden de Trabajo pendiente de aceptación'
       );
     }
@@ -924,17 +1051,18 @@ if (
       throw new Error('No tienes permiso para aceptar esta Orden de Trabajo');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
       const current = await tx.workOrder.findUnique({
         where: { id: workOrder.id }
       });
 
       if (!current) {
-  throw new Error('La Orden de Trabajo ya no existe');
+  throw new ConflictException('La Orden de Trabajo ya no existe');
 }
 
 if (current.status !== 'PENDING_ACCEPTANCE') {
-  throw new Error(
+  throw new ConflictException(
     'Esta Orden de Trabajo ya no está pendiente de aceptación'
   );
 }
@@ -943,8 +1071,42 @@ if (
   current.responseDeadline &&
   new Date() >= current.responseDeadline
 ) {
-  throw new Error(
+  throw new ConflictException(
     'El plazo para aceptar esta Orden de Trabajo ha vencido'
+  );
+}
+
+const latestWorkOrder = await tx.workOrder.findFirst({
+  where: { jobRequestId },
+  orderBy: { version: 'desc' },
+  select: { id: true }
+});
+
+if (!latestWorkOrder || latestWorkOrder.id !== current.id) {
+  throw new ConflictException(
+    'Existe una versión más reciente de la Orden de Trabajo'
+  );
+}
+
+const jobRequest = await tx.jobRequest.findUnique({
+  where: { id: jobRequestId },
+  select: { status: true }
+});
+
+if (jobRequest?.status !== 'PENDING_AGREEMENT') {
+  throw new ConflictException(
+    'La solicitud de servicio ya no está en negociación'
+  );
+}
+
+const proposal = await tx.proposal.findUnique({
+  where: { id: current.proposalId },
+  select: { status: true }
+});
+
+if (proposal?.status !== 'SELECTED') {
+  throw new ConflictException(
+    'La propuesta ya no está seleccionada'
   );
 }
 
@@ -958,9 +1120,23 @@ const data: any = {};
         data.specialistAcceptedAt = new Date();
       }
 
-      const updated = await tx.workOrder.update({
-        where: { id: workOrder.id },
+      const result = await tx.workOrder.updateMany({
+        where: {
+          id: current.id,
+          status: 'PENDING_ACCEPTANCE',
+          responseDeadline: { gt: new Date() }
+        },
         data
+      });
+
+      if (result.count !== 1) {
+        throw new ConflictException(
+          'La Orden de Trabajo cambió o su plazo ha vencido'
+        );
+      }
+
+      const updated = await tx.workOrder.findUniqueOrThrow({
+        where: { id: current.id }
       });
 
       if (
@@ -1015,14 +1191,19 @@ const data: any = {};
       return tx.workOrder.findUnique({
         where: { id: workOrder.id }
       });
-    });
+      }, {
+        isolationLevel: 'Serializable'
+      })
+    );
   }
-    @Post(':jobId/work-order/extension/request')
+
+  @Post(':jobId/work-order/extension/request')
   async requestWorkOrderExtension(
     @Req() req: any,
     @Param('jobId') jobRequestId: string
   ) {
-    return this.prisma.$transaction(async (tx) => {
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
       const workOrder = await tx.workOrder.findFirst({
         where: {
           jobRequestId,
@@ -1071,27 +1252,24 @@ const data: any = {};
         throw new Error('El plazo de negociación ya venció');
       }
 
-      const approvedExtension = await tx.workOrder.findFirst({
-  where: {
-    jobRequestId,
-    extensionApprovedAt: { not: null }
-  }
-});
+      if (!workOrder.negotiationId) {
+        throw new Error(
+          'La Orden de Trabajo no tiene identificador de negociación'
+        );
+      }
 
-if (approvedExtension) {
-  throw new Error(
-    'Ya se concedió la única prórroga permitida en esta negociación'
-  );
-}
+      const previousExtension = await tx.workOrder.findFirst({
+        where: {
+          negotiationId: workOrder.negotiationId,
+          extensionRequestedAt: { not: null }
+        }
+      });
 
-if (
-  workOrder.extensionRequestedAt &&
-  !workOrder.extensionRejectedAt
-) {
-  throw new Error(
-    'Ya existe una solicitud de prórroga pendiente de respuesta'
-  );
-}
+      if (previousExtension) {
+        throw new Error(
+          'Ya se solicitó la única prórroga permitida en esta negociación'
+        );
+      }
 
 const result = await tx.workOrder.updateMany({
   where: {
@@ -1099,10 +1277,8 @@ const result = await tx.workOrder.updateMany({
     status: 'PENDING_ACCEPTANCE',
     extensionApprovedAt: null,
     responseDeadline: { gt: new Date() },
-    OR: [
-      { extensionRequestedAt: null },
-      { extensionRejectedAt: { not: null } }
-    ]
+    extensionRequestedAt: null,
+    extensionRejectedAt: null
   },
   data: {
     extensionRequestedAt: new Date(),
@@ -1115,13 +1291,16 @@ const result = await tx.workOrder.updateMany({
         );
       }
 
-      return {
+return {
         message: 'Solicitud de prórroga registrada. Pendiente de aprobación.',
         workOrderId: workOrder.id
       };
-    });
+      }, {
+        isolationLevel: 'Serializable'
+      })
+    );
   }
-  @Post(':jobId/work-order/extension/respond')
+      @Post(':jobId/work-order/extension/respond')
   async respondWorkOrderExtension(
     @Req() req: any,
     @Param('jobId') jobRequestId: string,
@@ -1133,7 +1312,8 @@ const result = await tx.workOrder.updateMany({
       throw new Error('Debes indicar approve: true o false');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
       const workOrder = await tx.workOrder.findFirst({
         where: {
           jobRequestId,
@@ -1186,9 +1366,15 @@ const result = await tx.workOrder.updateMany({
       }
 
       if (body.approve) {
+        if (!workOrder.negotiationId) {
+          throw new Error(
+            'La Orden de Trabajo no tiene identificador de negociación'
+          );
+        }
+
         const previousApproval = await tx.workOrder.findFirst({
           where: {
-            jobRequestId,
+            negotiationId: workOrder.negotiationId,
             extensionApprovedAt: { not: null }
           }
         });
@@ -1236,7 +1422,10 @@ const result = await tx.workOrder.updateMany({
           : 'Prórroga rechazada',
         workOrderId: workOrder.id
       };
-    });
+      }, {
+        isolationLevel: 'Serializable'
+      })
+    );
   }
     @Post(':jobId/payment/confirm')
   async confirmPayment(
