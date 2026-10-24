@@ -1,4 +1,4 @@
-import { Body, ConflictException, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, ConflictException, Controller, ForbiddenException, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -1769,7 +1769,9 @@ return {
     });
 
     if (!jobRequest) {
-      throw new Error('La solicitud no existe o no pertenece al cliente');
+      throw new ForbiddenException(
+        'No tienes autorización para consultar estas propuestas'
+      );
     }
 
     return this.prisma.proposal.findMany({
