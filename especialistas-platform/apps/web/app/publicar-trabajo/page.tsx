@@ -12,8 +12,6 @@ export default function PublicarTrabajo() {
     title: '',
     description: '',
     categoryId: '',
-    budgetMin: '',
-    budgetMax: '',
     city: '',
     state: '',
     zipcode: '',
@@ -45,8 +43,8 @@ export default function PublicarTrabajo() {
           title: form.title,
           description: form.description,
           categoryId: form.categoryId,
-          budgetMin: form.budgetMin ? Number(form.budgetMin) : null,
-          budgetMax: form.budgetMax ? Number(form.budgetMax) : null,
+          budgetMin: null,
+          budgetMax: null,
           city: form.city,
           state: form.state,
           zipcode: form.zipcode || null,
@@ -60,8 +58,6 @@ export default function PublicarTrabajo() {
         title: '',
         description: '',
         categoryId: '',
-        budgetMin: '',
-        budgetMax: '',
         city: '',
         state: '',
         zipcode: '',
@@ -115,27 +111,7 @@ export default function PublicarTrabajo() {
             ))}
           </select>
 
-          <label>Presupuesto mínimo (USD)</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.budgetMin}
-            onChange={(e) => updateField('budgetMin', e.target.value)}
-            onWheel={(e) => e.currentTarget.blur()}
-          />
-
-          <label>Presupuesto máximo (USD)</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.budgetMax}
-            onChange={(e) => updateField('budgetMax', e.target.value)}
-            onWheel={(e) => e.currentTarget.blur()}
-          />
-
-          <h2>Ubicación del trabajo</h2>
+<h2>Ubicación del trabajo</h2>
 
           <label>Ciudad</label>
           <input

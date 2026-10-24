@@ -59,8 +59,6 @@ export default function MisSolicitudes() {
   const [editDraft, setEditDraft] = useState({
     title: '',
     description: '',
-    budgetMin: '',
-    budgetMax: '',
     city: '',
     state: '',
     zipcode: '',
@@ -445,8 +443,6 @@ export default function MisSolicitudes() {
     setEditDraft({
       title: job.title || '',
       description: job.description || '',
-      budgetMin: job.budgetMin != null ? String(job.budgetMin) : '',
-      budgetMax: job.budgetMax != null ? String(job.budgetMax) : '',
       city: job.city || '',
       state: job.state || '',
       zipcode: job.zipcode || '',
@@ -475,8 +471,8 @@ export default function MisSolicitudes() {
         body: JSON.stringify({
           title: editDraft.title,
           description: editDraft.description,
-          budgetMin: editDraft.budgetMin,
-          budgetMax: editDraft.budgetMax,
+          budgetMin: null,
+          budgetMax: null,
           city: editDraft.city,
           state: editDraft.state,
           zipcode: editDraft.zipcode,
@@ -705,12 +701,6 @@ export default function MisSolicitudes() {
               <strong>Categoría:</strong> {job.category?.name}
             </p>
 
-            <p>
-              <strong>Presupuesto:</strong>{' '}
-              {job.budgetMin || job.budgetMax
-                ? `$${job.budgetMin ?? 0} - $${job.budgetMax ?? 0}`
-                : 'No especificado'}
-            </p>
 
             <p>
               <strong>Ubicación:</strong>{' '}
@@ -1777,27 +1767,7 @@ export default function MisSolicitudes() {
                     }
                   />
 
-                  <label>Presupuesto mínimo</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={editDraft.budgetMin}
-                    onChange={(e) =>
-                      setEditDraft((prev) => ({ ...prev, budgetMin: e.target.value }))
-                    }
-                  />
-
-                  <label>Presupuesto máximo</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={editDraft.budgetMax}
-                    onChange={(e) =>
-                      setEditDraft((prev) => ({ ...prev, budgetMax: e.target.value }))
-                    }
-                  />
-
-                  <label>Ciudad</label>
+<label>Ciudad</label>
                   <input
                     value={editDraft.city}
                     onChange={(e) =>

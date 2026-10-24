@@ -202,12 +202,6 @@ export default function TrabajosDisponibles() {
               <strong>Especialidad:</strong> {job.category?.name}
             </p>
 
-            <p>
-              <strong>Presupuesto:</strong>{' '}
-              {job.budgetMin || job.budgetMax
-                ? `$${job.budgetMin ?? 0} - $${job.budgetMax ?? 0}`
-                : 'No especificado'}
-            </p>
 
             <p>
               <strong>Ubicación:</strong>{' '}

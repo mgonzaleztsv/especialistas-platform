@@ -57,14 +57,8 @@ export class JobRequestsController {
         categoryId: body.categoryId,
         title: body.title,
         description: body.description,
-        budgetMin:
-          body.budgetMin !== undefined && body.budgetMin !== null
-            ? Number(body.budgetMin)
-            : null,
-        budgetMax:
-          body.budgetMax !== undefined && body.budgetMax !== null
-            ? Number(body.budgetMax)
-            : null,
+        budgetMin: null,
+        budgetMax: null,
         city: body.city,
         state: body.state,
         zipcode: body.zipcode || null,
@@ -1962,19 +1956,17 @@ return {
       data.description = description;
     }
 
-    if (body.budgetMin !== undefined) {
-      data.budgetMin =
-        body.budgetMin === null || body.budgetMin === ''
-          ? null
-          : Number(body.budgetMin);
+    if (
+      (body.budgetMin != null && body.budgetMin !== '') ||
+      (body.budgetMax != null && body.budgetMax !== '')
+    ) {
+      throw new Error(
+        'El cliente no puede establecer un presupuesto inicial'
+      );
     }
 
-    if (body.budgetMax !== undefined) {
-      data.budgetMax =
-        body.budgetMax === null || body.budgetMax === ''
-          ? null
-          : Number(body.budgetMax);
-    }
+    data.budgetMin = null;
+    data.budgetMax = null;
 
     if (
       data.budgetMin !== undefined &&
