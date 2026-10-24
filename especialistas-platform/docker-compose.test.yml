@@ -1,0 +1,15 @@
+services:
+  db-test:
+    image: postgres:16
+    restart: "no"
+    environment:
+      POSTGRES_USER: connectpro_test
+      POSTGRES_PASSWORD: ${TEST_POSTGRES_PASSWORD:?Required}
+      POSTGRES_DB: connectpro_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - connectpro_test_data:/var/lib/postgresql/data
+
+volumes:
+  connectpro_test_data:
