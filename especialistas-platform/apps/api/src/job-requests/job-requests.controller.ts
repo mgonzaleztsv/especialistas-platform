@@ -1535,9 +1535,33 @@ return {
       );
     }
 
-    return this.prisma.jobRequest.update({
-      where: { id: jobRequestId },
+    const started = await this.prisma.jobRequest.updateMany({
+      where: {
+        id: jobRequestId,
+        status: 'ASSIGNED',
+        proposals: {
+          some: {
+            specialistId: specialist.id,
+            status: 'ACCEPTED'
+          }
+        },
+        payment: {
+          is: {
+            status: 'PAID'
+          }
+        }
+      },
       data: { status: 'IN_PROGRESS' }
+    });
+
+    if (started.count !== 1) {
+      throw new ConflictException(
+        'El trabajo cambió de estado y no puede iniciarse nuevamente'
+      );
+    }
+
+    return this.prisma.jobRequest.findUnique({
+      where: { id: jobRequestId }
     });
   }
 
@@ -1571,9 +1595,28 @@ return {
       throw new Error('El trabajo no está en progreso o no pertenece a este especialista');
     }
 
-    return this.prisma.jobRequest.update({
-      where: { id: jobRequestId },
+    const completed = await this.prisma.jobRequest.updateMany({
+      where: {
+        id: jobRequestId,
+        status: 'IN_PROGRESS',
+        proposals: {
+          some: {
+            specialistId: specialist.id,
+            status: 'ACCEPTED'
+          }
+        }
+      },
       data: { status: 'AWAITING_CLIENT_CONFIRMATION' }
+    });
+
+    if (completed.count !== 1) {
+      throw new ConflictException(
+        'El trabajo cambió de estado y no puede finalizarse nuevamente'
+      );
+    }
+
+    return this.prisma.jobRequest.findUnique({
+      where: { id: jobRequestId }
     });
   }
 
