@@ -1455,23 +1455,51 @@ return {
       throw new Error('No existe un pago pendiente para esta solicitud');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const updatedPayment = await tx.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: 'PAID',
-          provider: 'INTERNAL_MVP',
-          paidAt: new Date()
+    if (process.env.INTERNAL_MVP_PAYMENTS_ENABLED !== 'true') {
+      throw new Error(
+        'Los pagos simulados no están habilitados'
+      );
+    }
+
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
+        const updatedPayment = await tx.payment.updateMany({
+          where: {
+            id: payment.id,
+            clientId: client.id,
+            status: 'PENDING'
+          },
+          data: {
+            status: 'PAID',
+            provider: 'INTERNAL_MVP',
+            paidAt: new Date()
+          }
+        });
+
+        if (updatedPayment.count !== 1) {
+          throw new Error('El pago ya cambió de estado');
         }
-      });
 
-      await tx.jobRequest.update({
-        where: { id: jobRequestId },
-        data: { status: 'ASSIGNED' }
-      });
+        const updatedJob = await tx.jobRequest.updateMany({
+          where: {
+            id: jobRequestId,
+            clientId: client.id,
+            status: 'AWAITING_PAYMENT'
+          },
+          data: { status: 'ASSIGNED' }
+        });
 
-      return updatedPayment;
-    });
+        if (updatedJob.count !== 1) {
+          throw new Error('La solicitud ya cambió de estado');
+        }
+
+        return tx.payment.findUniqueOrThrow({
+          where: { id: payment.id }
+        });
+      }, {
+        isolationLevel: 'Serializable'
+      })
+    );
   }
 
   @Patch('specialist/my-jobs/:id/start')
@@ -1761,20 +1789,61 @@ return {
       throw new Error('El pago del trabajo no está listo para liberarse');
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      await tx.payment.update({
-        where: { id: jobRequest.payment!.id },
-        data: {
-          status: 'RELEASED',
-          releasedAt: new Date()
-        }
-      });
+    if (process.env.INTERNAL_MVP_PAYMENTS_ENABLED !== 'true') {
+      throw new Error(
+        'La liberación simulada de pagos no está habilitada'
+      );
+    }
 
-      return tx.jobRequest.update({
-        where: { id: jobRequestId },
-        data: { status: 'COMPLETED' }
-      });
-    });
+    if (jobRequest.payment.provider !== 'INTERNAL_MVP') {
+      throw new Error(
+        'Este pago requiere confirmación del proveedor externo'
+      );
+    }
+
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
+        const updatedPayment = await tx.payment.updateMany({
+          where: {
+            id: jobRequest.payment!.id,
+            clientId: client.id,
+            status: 'PAID',
+            provider: 'INTERNAL_MVP'
+          },
+          data: {
+            status: 'RELEASED',
+            releasedAt: new Date()
+          }
+        });
+
+        if (updatedPayment.count !== 1) {
+          throw new Error(
+            'El pago ya cambió de estado'
+          );
+        }
+
+        const updatedJob = await tx.jobRequest.updateMany({
+          where: {
+            id: jobRequestId,
+            clientId: client.id,
+            status: 'AWAITING_CLIENT_CONFIRMATION'
+          },
+          data: { status: 'COMPLETED' }
+        });
+
+        if (updatedJob.count !== 1) {
+          throw new Error(
+            'El trabajo ya cambió de estado'
+          );
+        }
+
+        return tx.jobRequest.findUniqueOrThrow({
+          where: { id: jobRequestId }
+        });
+      }, {
+        isolationLevel: 'Serializable'
+      })
+    );
   }
 
   @Post(':id/review')
