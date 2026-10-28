@@ -7,6 +7,7 @@ import { ClientsModule } from './clients/clients.module';
 import { SpecialistsModule } from './specialists/specialists.module';
 import { CategoriesModule } from './categories/categories.module';
 import { JobRequestsModule } from './job-requests/job-requests.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
-@Module({ imports: [ScheduleModule.forRoot(), PrismaModule, AuthModule, UsersModule, ClientsModule, SpecialistsModule, CategoriesModule, JobRequestsModule] })
+@Module({ imports: [ScheduleModule.forRoot(), PrismaModule, AuthModule, UsersModule, ClientsModule, SpecialistsModule, CategoriesModule, JobRequestsModule, NotificationsModule] })
 export class AppModule {}

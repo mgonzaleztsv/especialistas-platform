@@ -48,6 +48,7 @@ model User {
   sentMessages        Message[]
   terminationRequests TerminationRequest[]
   damageClaimsRequested DamageClaim[]
+  notifications Notification[]
 }
 
 model Client {
@@ -75,6 +76,7 @@ model Specialist {
   trustScore         Int                  @default(0)
   user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   categories         SpecialistCategory[]
+  serviceAreas       ServiceArea[]
   documents          Document[]
   portfolioItems     PortfolioItem[]
   createdAt          DateTime             @default(now())
@@ -163,6 +165,11 @@ model JobRequest {
   city        String
   state       String
   zipcode     String?
+  serviceAddress String?
+  latitude    Decimal?         @db.Decimal(10, 7)
+  longitude   Decimal?         @db.Decimal(10, 7)
+  locationVerificationStatus JobLocationVerificationStatus @default(UNVERIFIED)
+  locationVerifiedAt DateTime?
   desiredDate DateTime?
   status      JobRequestStatus @default(PUBLISHED)
   client      Client           @relation(fields: [clientId], references: [id], onDelete: Cascade)
@@ -176,6 +183,7 @@ model JobRequest {
   payment            Payment?
   terminationRequest TerminationRequest?
   workOrders         WorkOrder[]
+  notifications Notification[]
 }
 
 model Message {
@@ -488,4 +496,62 @@ model SpecialistReview {
 
   @@index([specialistId])
   @@index([clientId])
+}
+
+
+model ServiceArea {
+  id              String     @id @default(uuid())
+  specialistId    String
+  name            String
+  centerLatitude  Decimal    @db.Decimal(10, 7)
+  centerLongitude Decimal    @db.Decimal(10, 7)
+  radiusMiles     Int
+  isActive        Boolean    @default(true)
+  specialist      Specialist @relation(fields: [specialistId], references: [id], onDelete: Cascade)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([specialistId, isActive])
+}
+
+
+model Notification {
+  id           String    @id @default(uuid())
+  userId       String
+  jobRequestId String
+  type         String
+  title        String
+  body         String
+  readAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobRequest   JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobRequestId, type])
+  @@index([userId, readAt, createdAt])
+}
+
+
+model NotificationOutbox {
+  id             String    @id @default(uuid())
+  jobRequestId   String
+  eventType      String
+  status         String    @default("PENDING")
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  processedAt    DateTime?
+  lastError      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([jobRequestId, eventType])
+  @@index([status, nextAttemptAt])
+}
+
+
+enum JobLocationVerificationStatus {
+  UNVERIFIED
+  VERIFIED
+  REJECTED
 }

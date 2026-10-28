@@ -1,8 +1,11 @@
-import { Body, ConflictException, Controller, ForbiddenException, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { containsLikelyStreetAddress } from './public-text-privacy';
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { evaluateCoverage } from '../common/geo-coverage';
+import { registerNewJobNotificationEvent } from '../notifications/notification-outbox';
 
 @Controller('job-requests')
 @UseGuards(JwtAuthGuard)
@@ -43,6 +46,14 @@ export class JobRequestsController {
 
   @Post()
   async create(@Req() req: any, @Body() body: any) {
+    if (
+      containsLikelyStreetAddress(body?.title) ||
+      containsLikelyStreetAddress(body?.description)
+    ) {
+      throw new BadRequestException(
+        'Por privacidad, no incluyas una dirección exacta en el título o la descripción. La dirección del servicio se proporcionará por separado.'
+      );
+    }
     const client = await this.prisma.client.findUnique({
       where: { userId: req.user.userId }
     });
@@ -51,7 +62,58 @@ export class JobRequestsController {
       throw new Error('El usuario no tiene perfil de cliente');
     }
 
-    return this.prisma.jobRequest.create({
+    const latitude = body?.latitude;
+    const longitude = body?.longitude;
+
+    const hasLatitude = latitude !== undefined && latitude !== null;
+    const hasLongitude = longitude !== undefined && longitude !== null;
+
+    if (hasLatitude !== hasLongitude) {
+      throw new BadRequestException(
+        'Debes proporcionar latitud y longitud juntas'
+      );
+    }
+
+    if (hasLatitude) {
+      if (
+        typeof latitude !== 'number' ||
+        !Number.isFinite(latitude) ||
+        latitude < -90 ||
+        latitude > 90 ||
+        typeof longitude !== 'number' ||
+        !Number.isFinite(longitude) ||
+        longitude < -180 ||
+        longitude > 180
+      ) {
+        throw new BadRequestException(
+          'Las coordenadas del trabajo no son válidas'
+        );
+      }
+    }
+
+    const city =
+      typeof body?.city === 'string'
+        ? body.city.trim()
+        : '';
+
+    const state =
+      typeof body?.state === 'string'
+        ? body.state.trim()
+        : '';
+
+    const zipcode =
+      typeof body?.zipcode === 'string'
+        ? body.zipcode.trim()
+        : '';
+
+    if (!city || !state) {
+      throw new BadRequestException(
+        'Ciudad y estado son obligatorios'
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const job = await tx.jobRequest.create({
       data: {
         clientId: client.id,
         categoryId: body.categoryId,
@@ -59,9 +121,11 @@ export class JobRequestsController {
         description: body.description,
         budgetMin: null,
         budgetMax: null,
-        city: body.city,
-        state: body.state,
-        zipcode: body.zipcode || null,
+        city,
+        state,
+        zipcode: zipcode || null,
+        latitude: hasLatitude ? latitude : null,
+        longitude: hasLongitude ? longitude : null,
         desiredDate: body.desiredDate
           ? new Date(body.desiredDate)
           : null
@@ -69,6 +133,24 @@ export class JobRequestsController {
       include: {
         category: true
       }
+      });
+
+      if (
+        hasLatitude &&
+        hasLongitude &&
+        job.locationVerificationStatus === 'VERIFIED'
+      ) {
+        await registerNewJobNotificationEvent(tx, job.id);
+      }
+
+      const {
+        latitude: privateLatitude,
+        longitude: privateLongitude,
+        locationVerifiedAt: privateVerificationDate,
+        ...clientJob
+      } = job;
+
+      return clientJob;
     });
   }
 
@@ -78,6 +160,16 @@ export class JobRequestsController {
     @Param('id') jobRequestId: string,
     @Body() body: any
   ) {
+    if (
+      containsLikelyStreetAddress(body?.includedScope) ||
+      containsLikelyStreetAddress(body?.excludedScope) ||
+      containsLikelyStreetAddress(body?.message)
+    ) {
+      throw new BadRequestException(
+        'Por privacidad, no incluyas una dirección exacta en los textos de la propuesta o de la Orden de Trabajo.'
+      );
+    }
+
     const specialist = await this.prisma.specialist.findUnique({
       where: { userId: req.user.userId }
     });
@@ -151,6 +243,16 @@ export class JobRequestsController {
     @Param('proposalId') proposalId: string,
     @Body() body: any
   ) {
+    if (
+      containsLikelyStreetAddress(body?.includedScope) ||
+      containsLikelyStreetAddress(body?.excludedScope) ||
+      containsLikelyStreetAddress(body?.message)
+    ) {
+      throw new BadRequestException(
+        'Por privacidad, no incluyas una dirección exacta en los textos de la propuesta o de la Orden de Trabajo.'
+      );
+    }
+
     const specialist = await this.prisma.specialist.findUnique({
       where: { userId: req.user.userId }
     });
@@ -306,6 +408,7 @@ export class JobRequestsController {
       where: { userId: req.user.userId },
       include: {
         categories: true,
+        serviceAreas: true,
         user: {
           select: {
             locations: true
@@ -322,9 +425,22 @@ export class JobRequestsController {
       (x: any) => x.categoryId
     );
 
-    const city = specialist.user?.locations?.[0]?.city;
+    if (categoryIds.length === 0) {
+      return [];
+    }
 
-    return this.prisma.jobRequest.findMany({
+    const city = specialist.user?.locations?.[0]?.city?.trim();
+
+    const areas = specialist.serviceAreas.map(area => ({
+      centerLatitude: Number(area.centerLatitude),
+      centerLongitude: Number(area.centerLongitude),
+      radiusMiles: area.radiusMiles,
+      isActive: area.isActive
+    }));
+
+    const hasConfiguredAreas = areas.length > 0;
+
+    const jobs = await this.prisma.jobRequest.findMany({
       where: {
         status: {
           in: ['PUBLISHED', 'RECEIVING_QUOTES']
@@ -332,7 +448,7 @@ export class JobRequestsController {
         ...(categoryIds.length
           ? { categoryId: { in: categoryIds } }
           : {}),
-        ...(city
+        ...(!hasConfiguredAreas && city
           ? { city: { equals: city, mode: 'insensitive' } }
           : {})
       },
@@ -363,6 +479,66 @@ export class JobRequestsController {
       orderBy: {
         createdAt: 'desc'
       }
+    });
+
+    const publicJob = (job: typeof jobs[number]) => {
+      const {
+        serviceAddress,
+        locationVerifiedAt,
+        latitude,
+        longitude,
+        ...safeJob
+      } = job;
+
+      return safeJob;
+    };
+
+    if (!hasConfiguredAreas) {
+      return jobs.map(publicJob);
+    }
+
+    const matches = jobs.flatMap(job => {
+      const hasCoordinates =
+        job.latitude !== null &&
+        job.longitude !== null;
+
+      if (!hasCoordinates) {
+        const sameCity =
+          Boolean(city) &&
+          job.city.trim().toLowerCase() === city.toLowerCase();
+
+        return sameCity
+          ? [{
+              ...publicJob(job),
+              coverageDistanceMiles: null
+            }]
+          : [];
+      }
+
+      const coverage = evaluateCoverage(
+        Number(job.latitude),
+        Number(job.longitude),
+        areas
+      );
+
+      if (!coverage.covered) {
+        return [];
+      }
+
+      return [{
+        ...publicJob(job),
+        coverageDistanceMiles: coverage.distanceMiles
+      }];
+    });
+
+    return matches.sort((a, b) => {
+      if (a.coverageDistanceMiles === null) return 1;
+      if (b.coverageDistanceMiles === null) return -1;
+
+      return (
+        a.coverageDistanceMiles -
+        b.coverageDistanceMiles
+      );
     });
   }
 
@@ -780,7 +956,19 @@ export class JobRequestsController {
       throw new Error('No tienes acceso a esta Orden de Trabajo');
     }
 
-    return workOrder;
+    const {
+      serviceAddress,
+      latitude,
+      longitude,
+      locationVerifiedAt,
+      locationVerificationStatus,
+      ...safeJobRequest
+    } = workOrder.jobRequest;
+
+    return {
+      ...workOrder,
+      jobRequest: safeJobRequest
+    };
   }
 
   @Post(':jobId/work-order/revise')
@@ -789,6 +977,15 @@ export class JobRequestsController {
     @Param('jobId') jobRequestId: string,
     @Body() body: any
   ) {
+    if (
+      containsLikelyStreetAddress(body?.includedScope) ||
+      containsLikelyStreetAddress(body?.excludedScope)
+    ) {
+      throw new BadRequestException(
+        'Por privacidad, no incluyas una dirección exacta en los textos de la propuesta o de la Orden de Trabajo.'
+      );
+    }
+
     const workOrder = await this.prisma.workOrder.findFirst({
       where: {
         jobRequestId,
@@ -1488,7 +1685,16 @@ return {
         }
 
         return tx.payment.findUniqueOrThrow({
-          where: { id: payment.id }
+          where: { id: payment.id },
+          select: {
+            id: true,
+            jobRequestId: true,
+            amount: true,
+            currency: true,
+            status: true,
+            paidAt: true,
+            releasedAt: true
+          }
         });
       }, {
         isolationLevel: 'Serializable'
@@ -1560,9 +1766,23 @@ return {
       );
     }
 
-    return this.prisma.jobRequest.findUnique({
+    const updatedJob = await this.prisma.jobRequest.findUnique({
       where: { id: jobRequestId }
     });
+
+    if (!updatedJob) {
+      throw new Error('El trabajo no está disponible');
+    }
+
+    const {
+      serviceAddress,
+      latitude,
+      longitude,
+      locationVerifiedAt,
+      ...safeJob
+    } = updatedJob;
+
+    return safeJob;
   }
 
   @Patch('specialist/my-jobs/:id/complete')
@@ -1615,9 +1835,23 @@ return {
       );
     }
 
-    return this.prisma.jobRequest.findUnique({
+    const updatedJob = await this.prisma.jobRequest.findUnique({
       where: { id: jobRequestId }
     });
+
+    if (!updatedJob) {
+      throw new Error('El trabajo no está disponible');
+    }
+
+    const {
+      serviceAddress,
+      latitude,
+      longitude,
+      locationVerifiedAt,
+      ...safeJob
+    } = updatedJob;
+
+    return safeJob;
   }
 
   @Post('specialist/my-jobs/:id/review')
@@ -1685,7 +1919,7 @@ return {
       return [];
     }
 
-    return this.prisma.jobRequest.findMany({
+    const jobs = await this.prisma.jobRequest.findMany({
       where: {
         status: {
           in: [
@@ -1745,6 +1979,18 @@ return {
       orderBy: {
         updatedAt: 'desc'
       }
+    });
+
+    return jobs.map(job => {
+      const {
+        serviceAddress,
+        locationVerifiedAt,
+        latitude,
+        longitude,
+        ...safeJob
+      } = job;
+
+      return safeJob;
     });
   }
 
@@ -1876,9 +2122,18 @@ return {
           );
         }
 
-        return tx.jobRequest.findUniqueOrThrow({
+        const completedJob = await tx.jobRequest.findUniqueOrThrow({
           where: { id: jobRequestId }
         });
+
+        const {
+          latitude: privateLatitude,
+          longitude: privateLongitude,
+          locationVerifiedAt: privateVerificationDate,
+          ...clientJob
+        } = completedJob;
+
+        return clientJob;
       }, {
         isolationLevel: 'Serializable'
       })
@@ -1955,6 +2210,14 @@ return {
     @Param('id') jobRequestId: string,
     @Body() body: any
   ) {
+    if (
+      containsLikelyStreetAddress(body?.title) ||
+      containsLikelyStreetAddress(body?.description)
+    ) {
+      throw new BadRequestException(
+        'Por privacidad, no incluyas una dirección exacta en el título o la descripción. La dirección del servicio se proporcionará por separado.'
+      );
+    }
     const client = await this.prisma.client.findUnique({
       where: { userId: req.user.userId }
     });
@@ -2047,10 +2310,19 @@ return {
         : null;
     }
 
-    return this.prisma.jobRequest.update({
+    const updatedJob = await this.prisma.jobRequest.update({
       where: { id: jobRequest.id },
       data
     });
+
+    const {
+      latitude,
+      longitude,
+      locationVerifiedAt,
+      ...clientJob
+    } = updatedJob;
+
+    return clientJob;
   }
 
   @Patch(':id/cancel')
@@ -2093,10 +2365,19 @@ return {
         }
       });
 
-      return tx.jobRequest.update({
+      const cancelledJob = await tx.jobRequest.update({
         where: { id: jobRequestId },
         data: { status: 'CANCELLED' }
       });
+
+      const {
+        latitude,
+        longitude,
+        locationVerifiedAt,
+        ...clientJob
+      } = cancelledJob;
+
+      return clientJob;
     });
   }
 
@@ -2322,7 +2603,14 @@ return {
         });
 
         return {
-          jobRequest: updatedJob,
+          jobRequest: {
+            id: updatedJob.id,
+            title: updatedJob.title,
+            status: updatedJob.status,
+            city: updatedJob.city,
+            state: updatedJob.state,
+            zipcode: updatedJob.zipcode
+          },
           settlement: {
             totalAmount,
             specialistPayout: 0,
@@ -2404,7 +2692,14 @@ return {
         });
 
         return {
-          jobRequest: updatedJob,
+          jobRequest: {
+            id: updatedJob.id,
+            title: updatedJob.title,
+            status: updatedJob.status,
+            city: updatedJob.city,
+            state: updatedJob.state,
+            zipcode: updatedJob.zipcode
+          },
           settlement: {
             totalAmount,
             specialistPayout,
@@ -2504,7 +2799,14 @@ return {
       });
 
       return {
-        jobRequest: updatedJob,
+        jobRequest: {
+          id: updatedJob.id,
+          title: updatedJob.title,
+          status: updatedJob.status,
+          city: updatedJob.city,
+          state: updatedJob.state,
+          zipcode: updatedJob.zipcode
+        },
         settlement: {
           totalAmount,
           specialistPayout,
@@ -3729,9 +4031,13 @@ return {
         proposals: {
           where: { status: 'ACCEPTED' },
           take: 1,
-          include: {
+          select: {
+            id: true,
             specialist: {
-              select: { userId: true }
+              select: {
+                id: true,
+                userId: true
+              }
             }
           }
         }
@@ -3752,6 +4058,36 @@ return {
       throw new Error('No tienes acceso a esta conversación');
     }
 
+    if (containsLikelyStreetAddress(messageBody)) {
+      const payment = await this.prisma.payment.findUnique({
+        where: { jobRequestId },
+        select: {
+          status: true,
+          specialistId: true,
+          proposalId: true
+        }
+      });
+
+      const acceptedProposal = job.proposals[0];
+      const acceptedSpecialistId =
+        acceptedProposal?.specialist?.id;
+
+      if (
+        !payment ||
+        !['PAID', 'RELEASED'].includes(payment.status) ||
+        !acceptedSpecialistId ||
+        payment.specialistId !== acceptedSpecialistId ||
+        payment.proposalId !== acceptedProposal?.id
+      ) {
+        throw new BadRequestException(
+          'Por privacidad, la dirección exacta del servicio ' +
+          'no puede compartirse por mensaje antes de confirmar ' +
+          'el pago. Utiliza el sistema de dirección privada ' +
+          'de ConnectPro.'
+        );
+      }
+    }
+
     return this.prisma.message.create({
       data: {
         jobRequestId,
@@ -3770,6 +4106,91 @@ return {
     });
   }
 
+  @Get(':id/service-address')
+  async getServiceAddress(
+    @Req() req: any,
+    @Param('id') jobRequestId: string
+  ) {
+    const job = await this.prisma.jobRequest.findUnique({
+      where: { id: jobRequestId },
+      select: {
+        client: {
+          select: { userId: true }
+        },
+        serviceAddress: true,
+        city: true,
+        state: true,
+        zipcode: true,
+        status: true,
+        proposals: {
+          where: { status: 'ACCEPTED' },
+          select: {
+            id: true,
+            specialistId: true,
+            specialist: {
+              select: { userId: true }
+            }
+          }
+        },
+        payment: {
+          select: {
+            status: true,
+            specialistId: true,
+            proposalId: true
+          }
+        }
+      }
+    });
+
+    if (!job) {
+      throw new ForbiddenException(
+        'No tienes autorización para consultar esta dirección'
+      );
+    }
+
+    const userId = req.user.userId;
+    const isOwner = job.client.userId === userId;
+
+    const isContractedSpecialist =
+      job.proposals.some(
+        proposal =>
+          proposal.specialist.userId === userId &&
+          job.payment?.specialistId === proposal.specialistId &&
+          job.payment?.proposalId === proposal.id
+      );
+
+    const allowedStatuses = [
+      'ASSIGNED',
+      'IN_PROGRESS',
+      'AWAITING_CLIENT_CONFIRMATION',
+      'TERMINATION_REQUESTED',
+      'DISPUTED',
+      'COMPLETED'
+    ];
+
+    const paid =
+      job.payment?.status === 'PAID' ||
+      job.payment?.status === 'RELEASED';
+
+    const specialistAuthorized =
+      isContractedSpecialist &&
+      allowedStatuses.includes(job.status) &&
+      paid;
+
+    if (!isOwner && !specialistAuthorized) {
+      throw new ForbiddenException(
+        'No tienes autorización para consultar esta dirección'
+      );
+    }
+
+    return {
+      serviceAddress: job.serviceAddress,
+      city: job.city,
+      state: job.state,
+      zipcode: job.zipcode
+    };
+  }
+
   @Get('me')
   async myRequests(@Req() req: any) {
     const client = await this.prisma.client.findUnique({
@@ -3780,7 +4201,7 @@ return {
       return [];
     }
 
-    return this.prisma.jobRequest.findMany({
+    const jobs = await this.prisma.jobRequest.findMany({
       where: { clientId: client.id },
       include: {
         category: true,
@@ -3816,6 +4237,17 @@ return {
       orderBy: {
         createdAt: 'desc'
       }
+    });
+
+    return jobs.map(job => {
+      const {
+        latitude,
+        longitude,
+        locationVerifiedAt,
+        ...clientJob
+      } = job;
+
+      return clientJob;
     });
   }
 }

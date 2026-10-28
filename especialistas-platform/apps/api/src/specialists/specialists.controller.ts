@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -6,6 +6,270 @@ import { PrismaService } from '../prisma/prisma.service';
 @Controller('specialists')
 export class SpecialistsController {
   constructor(private prisma:PrismaService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/service-areas')
+  async getMyServiceAreas(@Req() req: any) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId },
+      select: { id: true }
+    });
+
+    if (!specialist) {
+      throw new ForbiddenException(
+        'Necesitas un perfil de especialista para consultar tus zonas de servicio'
+      );
+    }
+
+    return this.prisma.serviceArea.findMany({
+      where: { specialistId: specialist.id },
+      orderBy: { createdAt: 'asc' }
+    });
+  }
+
+
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/service-areas')
+  async createMyServiceArea(
+    @Req() req: any,
+    @Body() body: any
+  ) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId },
+      select: { id: true }
+    });
+
+    if (!specialist) {
+      throw new ForbiddenException(
+        'Necesitas un perfil de especialista'
+      );
+    }
+
+    const name =
+      typeof body?.name === 'string'
+        ? body.name.trim()
+        : '';
+
+    const latitude = body?.centerLatitude;
+    const longitude = body?.centerLongitude;
+    const radius = body?.radiusMiles;
+
+    if (!name || name.length > 100) {
+      throw new BadRequestException(
+        'El nombre debe tener entre 1 y 100 caracteres'
+      );
+    }
+
+    if (
+      typeof latitude !== 'number' ||
+      !Number.isFinite(latitude) ||
+      latitude < -90 ||
+      latitude > 90
+    ) {
+      throw new BadRequestException('Latitud inválida');
+    }
+
+    if (
+      typeof longitude !== 'number' ||
+      !Number.isFinite(longitude) ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      throw new BadRequestException('Longitud inválida');
+    }
+
+    if (
+      !Number.isInteger(radius) ||
+      radius < 1 ||
+      radius > 100
+    ) {
+      throw new BadRequestException(
+        'El radio debe estar entre 1 y 100 millas'
+      );
+    }
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        return await this.prisma.$transaction(
+          async (tx) => {
+            await tx.specialist.update({
+              where: { id: specialist.id },
+              data: { updatedAt: new Date() }
+            });
+
+            const count = await tx.serviceArea.count({
+              where: { specialistId: specialist.id }
+            });
+
+            if (count >= 10) {
+              throw new BadRequestException(
+                'Puedes registrar hasta 10 zonas de servicio'
+              );
+            }
+
+            return tx.serviceArea.create({
+              data: {
+                specialistId: specialist.id,
+                name,
+                centerLatitude: latitude,
+                centerLongitude: longitude,
+                radiusMiles: radius,
+                isActive: true
+              }
+            });
+          },
+          {
+            isolationLevel: 'Serializable'
+          }
+        );
+      } catch (error: any) {
+        if (error?.code !== 'P2034' || attempt === 3) {
+          throw error;
+        }
+      }
+    }
+
+    throw new BadRequestException(
+      'No se pudo registrar la zona. Inténtalo nuevamente.'
+    );
+  }
+
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/service-areas/:areaId')
+  async updateMyServiceArea(
+    @Req() req: any,
+    @Param('areaId') areaId: string,
+    @Body() body: any
+  ) {
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId },
+      select: { id: true }
+    });
+
+    if (!specialist) {
+      throw new ForbiddenException(
+        'Necesitas un perfil de especialista'
+      );
+    }
+
+    const area = await this.prisma.serviceArea.findFirst({
+      where: {
+        id: areaId,
+        specialistId: specialist.id
+      }
+    });
+
+    if (!area) {
+      throw new NotFoundException(
+        'Zona de servicio no encontrada'
+      );
+    }
+
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      Array.isArray(body)
+    ) {
+      throw new BadRequestException('Datos inválidos');
+    }
+
+    const allowed = [
+      'name',
+      'centerLatitude',
+      'centerLongitude',
+      'radiusMiles',
+      'isActive'
+    ];
+
+    const keys = Object.keys(body);
+
+    if (
+      keys.length === 0 ||
+      keys.some(key => !allowed.includes(key))
+    ) {
+      throw new BadRequestException(
+        'Debes proporcionar campos válidos'
+      );
+    }
+
+    const data: any = {};
+
+    if ('name' in body) {
+      if (typeof body.name !== 'string') {
+        throw new BadRequestException('Nombre inválido');
+      }
+      const name = body.name.trim();
+      if (!name || name.length > 100) {
+        throw new BadRequestException('Nombre inválido');
+      }
+      data.name = name;
+    }
+
+    for (const [field, min, max] of [
+      ['centerLatitude', -90, 90],
+      ['centerLongitude', -180, 180]
+    ] as const) {
+      if (field in body) {
+        const value = body[field];
+        if (
+          typeof value !== 'number' ||
+          !Number.isFinite(value) ||
+          value < min ||
+          value > max
+        ) {
+          throw new BadRequestException(
+            'Coordenada inválida: ' + field
+          );
+        }
+        data[field] = value;
+      }
+    }
+
+    if ('radiusMiles' in body) {
+      if (
+        !Number.isInteger(body.radiusMiles) ||
+        body.radiusMiles < 1 ||
+        body.radiusMiles > 100
+      ) {
+        throw new BadRequestException(
+          'El radio debe estar entre 1 y 100 millas'
+        );
+      }
+      data.radiusMiles = body.radiusMiles;
+    }
+
+    if ('isActive' in body) {
+      if (typeof body.isActive !== 'boolean') {
+        throw new BadRequestException(
+          'El estado activo debe ser verdadero o falso'
+        );
+      }
+      data.isActive = body.isActive;
+    }
+
+    const result = await this.prisma.serviceArea.updateMany({
+      where: {
+        id: areaId,
+        specialistId: specialist.id
+      },
+      data
+    });
+
+    if (result.count !== 1) {
+      throw new NotFoundException(
+        'Zona de servicio no encontrada'
+      );
+    }
+
+    return this.prisma.serviceArea.findFirst({
+      where: {
+        id: areaId,
+        specialistId: specialist.id
+      }
+    });
+  }
 
   private calculateTrustScore(specialist: any): number {
     let score = 0;

@@ -886,6 +886,26 @@ export default function MisSolicitudes() {
                                 Proponer nueva versión
                               </h5>
 
+                              <div
+                                role="note"
+                                style={{
+                                  padding: '12px',
+                                  marginBottom: '16px',
+                                  border: '1px solid #d6a83c',
+                                  borderRadius: '6px',
+                                  backgroundColor: '#fff8e6',
+                                  color: '#453500'
+                                }}
+                              >
+                                <strong>Protección de privacidad.</strong>{' '}
+                                No incluyas domicilios exactos, números de
+                                casa o departamento ni datos personales en
+                                los alcances de la Orden de Trabajo.
+                                La dirección del servicio se compartirá
+                                por separado cuando se cumplan las
+                                condiciones de contratación y pago.
+                              </div>
+
                               <label>
                                 Alcance incluido
                                 <textarea
@@ -1750,6 +1770,29 @@ export default function MisSolicitudes() {
               editingJobId === job.id ? (
                 <div style={{ marginBottom: '12px' }}>
                   <h4>Editar solicitud</h4>
+
+                  <div
+                    role="note"
+                    style={{
+                      padding: '12px',
+                      marginBottom: '16px',
+                      border: '1px solid #d6a83c',
+                      borderRadius: '6px',
+                      backgroundColor: '#fff8e6',
+                      color: '#453500'
+                    }}
+                  >
+                    <strong>Protege tu privacidad.</strong>{' '}
+                    El título y la descripción de tu solicitud
+                    serán visibles para los especialistas.
+                    No escribas tu domicilio exacto, número
+                    de casa o departamento, teléfono ni otros
+                    datos personales. La dirección del servicio
+                    se solicitará por separado y solamente se
+                    compartirá con el especialista contratado
+                    cuando se cumplan las condiciones de
+                    seguridad y pago.
+                  </div>
 
                   <label>Título</label>
                   <input

@@ -358,6 +358,26 @@ export default function TrabajosDisponibles() {
                   }
                 />
 
+                <div
+                  role="note"
+                  style={{
+                    padding: '12px',
+                    marginBottom: '16px',
+                    border: '1px solid #d6a83c',
+                    borderRadius: '6px',
+                    backgroundColor: '#fff8e6',
+                    color: '#453500'
+                  }}
+                >
+                  <strong>Protección de privacidad.</strong>{' '}
+                  No incluyas domicilios exactos, números de
+                  casa o departamento ni otros datos personales
+                  en los alcances o mensajes de tu propuesta.
+                  La dirección del servicio se proporcionará
+                  por separado, cuando se cumplan las condiciones
+                  de contratación y pago.
+                </div>
+
                 <label>Alcance incluido</label>
                 <textarea
                   rows={4}
