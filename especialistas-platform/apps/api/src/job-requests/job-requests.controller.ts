@@ -2577,10 +2577,19 @@ return {
       }
 
       return this.prisma.$transaction(async (tx) => {
-        await tx.payment.update({
-          where: { id: jobRequest.payment!.id },
+        const cancellation = await tx.payment.updateMany({
+          where: {
+            id: jobRequest.payment!.id,
+            status: 'PENDING'
+          },
           data: { status: 'CANCELLED' }
         });
+
+        if (cancellation.count !== 1) {
+          throw new ConflictException(
+            'El pago ya cambió de estado y no puede cancelarse nuevamente'
+          );
+        }
 
         await tx.terminationRequest.update({
           where: { id: termination.id },
@@ -2645,6 +2654,20 @@ return {
         liability === 'SPECIALIST' ? totalAmount : 0;
 
       return this.prisma.$transaction(async (tx) => {
+        const settlement = await tx.payment.updateMany({
+          where: {
+            id: jobRequest.payment!.id,
+            status: 'PAID'
+          },
+          data: { status: 'SETTLED' }
+        });
+
+        if (settlement.count !== 1) {
+          throw new ConflictException(
+            'El pago ya fue liquidado o cambió de estado'
+          );
+        }
+
         await tx.paymentMovement.create({
           data: {
             paymentId: jobRequest.payment!.id,
@@ -2664,10 +2687,7 @@ return {
           }
         });
 
-        await tx.payment.update({
-          where: { id: jobRequest.payment!.id },
-          data: { status: 'SETTLED' }
-        });
+
 
         await tx.terminationRequest.update({
           where: { id: termination.id },
@@ -2727,6 +2747,20 @@ return {
         : 0;
 
     return this.prisma.$transaction(async (tx) => {
+      const settlement = await tx.payment.updateMany({
+        where: {
+          id: jobRequest.payment!.id,
+          status: 'PAID'
+        },
+        data: { status: 'SETTLED' }
+      });
+
+      if (settlement.count !== 1) {
+        throw new ConflictException(
+          'El pago ya fue liquidado o cambió de estado'
+        );
+      }
+
       const movements =
         termination.requesterRole === 'CLIENT'
           ? [
@@ -2770,10 +2804,7 @@ return {
         data: movements
       });
 
-      await tx.payment.update({
-        where: { id: jobRequest.payment!.id },
-        data: { status: 'SETTLED' }
-      });
+
 
       await tx.terminationRequest.update({
         where: { id: termination.id },
@@ -3089,10 +3120,19 @@ return {
       return this.prisma.$transaction(async (tx) => {
         const now = new Date();
 
-        await tx.payment.update({
-          where: { id: jobRequest.payment!.id },
+        const cancellation = await tx.payment.updateMany({
+          where: {
+            id: jobRequest.payment!.id,
+            status: 'PENDING'
+          },
           data: { status: 'CANCELLED' }
         });
+
+        if (cancellation.count !== 1) {
+          throw new ConflictException(
+            'El pago ya cambió de estado y no puede cancelarse nuevamente'
+          );
+        }
 
         const updatedTermination =
           await tx.terminationRequest.update({
@@ -3179,6 +3219,20 @@ return {
     return this.prisma.$transaction(async (tx) => {
       const now = new Date();
 
+      const settlement = await tx.payment.updateMany({
+        where: {
+          id: jobRequest.payment!.id,
+          status: 'PAID'
+        },
+        data: { status: 'SETTLED' }
+      });
+
+      if (settlement.count !== 1) {
+        throw new ConflictException(
+          'El pago ya fue liquidado o cambió de estado'
+        );
+      }
+
       if (specialistPayout > 0) {
         await tx.paymentMovement.create({
           data: {
@@ -3218,10 +3272,7 @@ return {
         });
       }
 
-      await tx.payment.update({
-        where: { id: jobRequest.payment!.id },
-        data: { status: 'SETTLED' }
-      });
+
 
       const updatedTermination =
         await tx.terminationRequest.update({
