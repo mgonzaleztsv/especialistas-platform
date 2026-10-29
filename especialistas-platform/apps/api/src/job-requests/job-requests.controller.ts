@@ -1,5 +1,5 @@
 import { containsLikelyStreetAddress } from './public-text-privacy';
-import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -943,7 +943,7 @@ export class JobRequestsController {
     });
 
     if (!workOrder) {
-      throw new Error('No existe una Orden de Trabajo para esta solicitud');
+      throw new NotFoundException('No existe una Orden de Trabajo para esta solicitud');
     }
 
     const isClient =
@@ -953,7 +953,7 @@ export class JobRequestsController {
       workOrder.proposal.specialist.userId === req.user.userId;
 
     if (!isClient && !isSpecialist) {
-      throw new Error('No tienes acceso a esta Orden de Trabajo');
+      throw new ForbiddenException('No tienes acceso a esta Orden de Trabajo');
     }
 
     const {
@@ -3960,7 +3960,7 @@ return {
     });
 
     if (!job) {
-      throw new Error('El trabajo no existe o aún no tiene especialista contratado');
+      throw new NotFoundException('El trabajo no existe o aún no tiene especialista contratado');
     }
 
     const specialistUserId = job.proposals[0]?.specialist?.userId;
@@ -3970,7 +3970,7 @@ return {
       req.user.userId === specialistUserId;
 
     if (!isParticipant) {
-      throw new Error('No tienes acceso a esta conversación');
+      throw new ForbiddenException('No tienes acceso a esta conversación');
     }
 
     await this.prisma.message.updateMany({
@@ -4010,11 +4010,11 @@ return {
     const messageBody = String(body.body || '').trim();
 
     if (!messageBody) {
-      throw new Error('El mensaje no puede estar vacío');
+      throw new BadRequestException('El mensaje no puede estar vacío');
     }
 
     if (messageBody.length > 2000) {
-      throw new Error('El mensaje no puede exceder 2000 caracteres');
+      throw new BadRequestException('El mensaje no puede exceder 2000 caracteres');
     }
 
     const job = await this.prisma.jobRequest.findFirst({
@@ -4045,7 +4045,7 @@ return {
     });
 
     if (!job) {
-      throw new Error('El trabajo no existe o aún no tiene especialista contratado');
+      throw new NotFoundException('El trabajo no existe o aún no tiene especialista contratado');
     }
 
     const specialistUserId = job.proposals[0]?.specialist?.userId;
@@ -4055,7 +4055,7 @@ return {
       req.user.userId === specialistUserId;
 
     if (!isParticipant) {
-      throw new Error('No tienes acceso a esta conversación');
+      throw new ForbiddenException('No tienes acceso a esta conversación');
     }
 
     if (containsLikelyStreetAddress(messageBody)) {
