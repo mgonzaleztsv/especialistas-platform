@@ -2095,6 +2095,99 @@ return {
     });
   }
 
+  @Post(':id/completion-claims')
+  async createCompletionClaim(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Body() body: any
+  ) {
+    const description = String(body?.description ?? '').trim();
+
+    if (description.length < 10 || description.length > 4000) {
+      throw new BadRequestException(
+        'La reclamación debe contener entre 10 y 4000 caracteres'
+      );
+    }
+
+    const client = await this.prisma.client.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!client) {
+      throw new BadRequestException(
+        'El usuario no tiene perfil de cliente'
+      );
+    }
+
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
+        const lockedJobs = await tx.$queryRaw`
+          SELECT "id"
+          FROM "JobRequest"
+          WHERE "id" = ${jobRequestId}
+          FOR UPDATE
+        `;
+
+        if (!Array.isArray(lockedJobs) || lockedJobs.length !== 1) {
+          throw new ConflictException(
+            'El trabajo ya no está disponible'
+          );
+        }
+
+        const job = await tx.jobRequest.findFirst({
+          where: {
+            id: jobRequestId,
+            clientId: client.id,
+            status: 'AWAITING_CLIENT_CONFIRMATION'
+          },
+          select: {
+            id: true,
+            reviewDeadline: true
+          }
+        });
+
+        if (!job) {
+          throw new ConflictException(
+            'El trabajo no está pendiente de revisión'
+          );
+        }
+
+        if (
+          !job.reviewDeadline ||
+          new Date() >= job.reviewDeadline
+        ) {
+          throw new ConflictException(
+            'El plazo para presentar la reclamación ha vencido'
+          );
+        }
+
+        const openClaims = await tx.completionClaim.count({
+          where: {
+            jobRequestId,
+            status: {
+              in: ['PENDING', 'CORRECTION_REQUESTED', 'DISPUTED']
+            }
+          }
+        });
+
+        if (openClaims > 0) {
+          throw new ConflictException(
+            'Ya existe una reclamación de revisión pendiente'
+          );
+        }
+
+        return tx.completionClaim.create({
+          data: {
+            jobRequestId,
+            clientId: client.id,
+            description,
+            status: 'PENDING'
+          }
+        });
+      }, { isolationLevel: 'Serializable' })
+    );
+  }
+
   @Post(':id/complete/confirm')
   async confirmJobCompletion(
     @Req() req: any,
@@ -2141,9 +2234,57 @@ return {
 
     return this.retryTransaction(() =>
       this.prisma.$transaction(async (tx) => {
+        const lockedJobs = await tx.$queryRaw`
+          SELECT "id"
+          FROM "JobRequest"
+          WHERE "id" = ${jobRequestId}
+          FOR UPDATE
+        `;
+
+        if (!Array.isArray(lockedJobs) || lockedJobs.length !== 1) {
+          throw new ConflictException(
+            'El trabajo ya no está disponible'
+          );
+        }
+
+        const currentJob = await tx.jobRequest.findFirst({
+          where: {
+            id: jobRequestId,
+            clientId: client.id,
+            status: 'AWAITING_CLIENT_CONFIRMATION'
+          },
+          include: { payment: true }
+        });
+
+        if (
+          !currentJob ||
+          !currentJob.payment ||
+          currentJob.payment.status !== 'PAID' ||
+          currentJob.payment.provider !== 'INTERNAL_MVP'
+        ) {
+          throw new ConflictException(
+            'El trabajo o su pago cambiaron antes de la confirmación'
+          );
+        }
+
+        const openClaims = await tx.completionClaim.count({
+          where: {
+            jobRequestId,
+            status: {
+              in: ['PENDING', 'CORRECTION_REQUESTED', 'DISPUTED']
+            }
+          }
+        });
+
+        if (openClaims > 0) {
+          throw new ConflictException(
+            'El trabajo tiene una reclamación de revisión pendiente'
+          );
+        }
+
         const updatedPayment = await tx.payment.updateMany({
           where: {
-            id: jobRequest.payment!.id,
+            id: currentJob.payment.id,
             clientId: client.id,
             status: 'PAID',
             provider: 'INTERNAL_MVP'

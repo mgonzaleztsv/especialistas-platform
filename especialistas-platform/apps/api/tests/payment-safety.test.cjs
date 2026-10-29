@@ -47,6 +47,18 @@ function setup(kind, opts = {}) {
       events.push(['transaction', options]);
       const pending = { ...state };
       const tx = {
+        $queryRaw: async (strings, ...values) => {
+          const sql = strings.join('?');
+          assert.match(sql, /FROM "JobRequest"/);
+          assert.match(sql, /FOR UPDATE/);
+          assert.equal(values.length, 1);
+          assert.equal(values[0], 'job-1');
+          events.push(['lock', values[0]]);
+          return [{ id: 'job-1' }];
+        },
+        completionClaim: {
+          count: async () => 0
+        },
         payment: {
           updateMany: async args => {
             events.push(['payment', args]);
@@ -63,6 +75,16 @@ function setup(kind, opts = {}) {
           })
         },
         jobRequest: {
+          findFirst: async () => ({
+            id: 'job-1',
+            clientId: 'client-1',
+            status: pending.job,
+            payment: {
+              id: 'payment-1',
+              status: pending.payment,
+              provider: opts.provider || 'INTERNAL_MVP'
+            }
+          }),
           updateMany: async args => {
             events.push(['job', args]);
             if (opts.jobConflict ||

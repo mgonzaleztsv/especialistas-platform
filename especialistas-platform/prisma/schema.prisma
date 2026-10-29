@@ -52,6 +52,7 @@ model User {
 }
 
 model Client {
+  completionClaims CompletionClaim[]
   id          String       @id @default(uuid())
   userId      String       @unique
   clientType  String       @default("INDIVIDUAL")
@@ -185,6 +186,7 @@ model JobRequest {
   messages         Message[]
   payment            Payment?
   terminationRequest TerminationRequest?
+  completionClaims CompletionClaim[]
   workOrders         WorkOrder[]
   notifications Notification[]
 }
@@ -558,4 +560,30 @@ enum JobLocationVerificationStatus {
   UNVERIFIED
   VERIFIED
   REJECTED
+}
+
+enum CompletionClaimStatus {
+  PENDING
+  CORRECTION_REQUESTED
+  DISPUTED
+  RESOLVED
+  REJECTED
+}
+
+model CompletionClaim {
+  id             String                @id @default(uuid())
+  jobRequestId   String
+  clientId       String
+  description    String
+  status         CompletionClaimStatus @default(PENDING)
+  resolutionNotes String?
+  resolvedAt     DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  jobRequest JobRequest @relation(fields: [jobRequestId], references: [id], onDelete: Cascade)
+  client     Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([jobRequestId, status])
+  @@index([clientId])
 }
