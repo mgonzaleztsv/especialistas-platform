@@ -705,6 +705,7 @@ export class JobRequestsController {
             materialsAmount: proposal.materialsAmount,
             currency: 'USD',
             templateVersion: '0.1',
+            reviewPeriodHours: 48,
             respondingParty: 'CLIENT',
             responseDeadline: new Date(
               Date.now() + 48 * 60 * 60 * 1000
@@ -1035,7 +1036,8 @@ export class JobRequestsController {
       'excludedScope',
       'scheduledDate',
       'laborAmount',
-      'materialsAmount'
+      'materialsAmount',
+      'reviewPeriodHours'
     ];
 
     const hasChanges = allowedFields.some((field) =>
@@ -1044,6 +1046,23 @@ export class JobRequestsController {
 
     if (!hasChanges) {
       throw new Error('No se recibieron cambios para la Orden de Trabajo');
+    }
+
+    let reviewPeriodHours = workOrder.reviewPeriodHours ?? 48;
+
+    if (
+      Object.prototype.hasOwnProperty.call(body, 'reviewPeriodHours')
+    ) {
+      if (
+        body.reviewPeriodHours !== 48 &&
+        body.reviewPeriodHours !== 168
+      ) {
+        throw new BadRequestException(
+          'El plazo de revisión debe ser de 48 horas o 7 días'
+        );
+      }
+
+      reviewPeriodHours = body.reviewPeriodHours;
     }
 
     let scheduledDate = workOrder.scheduledDate;
@@ -1181,6 +1200,7 @@ if (
           materialsAmount,
           currency: workOrder.currency,
           templateVersion: workOrder.templateVersion,
+          reviewPeriodHours,
           respondingParty: isClient ? 'SPECIALIST' : 'CLIENT',
           responseDeadline: new Date(
             Date.now() + 48 * 60 * 60 * 1000
@@ -1373,9 +1393,21 @@ const data: any = {};
           });
         }
 
+        if (
+          updated.reviewPeriodHours !== 48 &&
+          updated.reviewPeriodHours !== 168
+        ) {
+          throw new ConflictException(
+            'La Orden de Trabajo no tiene un plazo de revisión válido'
+          );
+        }
+
         await tx.jobRequest.update({
           where: { id: jobRequestId },
-          data: { status: 'AWAITING_PAYMENT' }
+          data: {
+            status: 'AWAITING_PAYMENT',
+            reviewPeriodHours: updated.reviewPeriodHours
+          }
         });
       }
 
@@ -1815,6 +1847,23 @@ return {
       throw new Error('El trabajo no está en progreso o no pertenece a este especialista');
     }
 
+    const reviewPeriodHours = jobRequest.reviewPeriodHours;
+
+    if (
+      reviewPeriodHours !== 48 &&
+      reviewPeriodHours !== 168
+    ) {
+      throw new ConflictException(
+        'El trabajo no tiene un plazo de revisión válido'
+      );
+    }
+
+    const workCompletedAt = new Date();
+    const reviewDeadline = new Date(
+      workCompletedAt.getTime() +
+      reviewPeriodHours * 60 * 60 * 1000
+    );
+
     const completed = await this.prisma.jobRequest.updateMany({
       where: {
         id: jobRequestId,
@@ -1826,7 +1875,11 @@ return {
           }
         }
       },
-      data: { status: 'AWAITING_CLIENT_CONFIRMATION' }
+      data: {
+        status: 'AWAITING_CLIENT_CONFIRMATION',
+        workCompletedAt,
+        reviewDeadline
+      }
     });
 
     if (completed.count !== 1) {

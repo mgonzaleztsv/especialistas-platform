@@ -143,11 +143,43 @@ test('725.1 - Contratación completa con PostgreSQL', async () => {
         assert.equal(currentJob.status, 'PENDING_AGREEMENT');
         assert.equal(currentProposal.status, 'SELECTED');
         assert.equal(order.status, 'PENDING_ACCEPTANCE');
+        assert.equal(order.reviewPeriodHours, 48);
         assert.equal(order.version, 1);
         assert.equal(order.respondingParty, 'CLIENT');
         assert.ok(order.responseDeadline > new Date());
 
         console.log('CORRECTO - Propuesta seleccionada y orden creada');
+
+        const originalOrderId = order.id;
+
+        await controller.reviseWorkOrder(
+          req(clientUser),
+          job.id,
+          { reviewPeriodHours: 168 }
+        );
+
+        const previousOrder = await tx.workOrder.findUnique({
+          where: { id: originalOrderId }
+        });
+
+        assert.equal(previousOrder.status, 'SUPERSEDED');
+        assert.equal(previousOrder.reviewPeriodHours, 48);
+
+        order = await tx.workOrder.findFirst({
+          where: {
+            jobRequestId: job.id,
+            status: 'PENDING_ACCEPTANCE'
+          }
+        });
+
+        assert.ok(order);
+        assert.equal(order.version, 2);
+        assert.equal(order.reviewPeriodHours, 168);
+        assert.equal(order.respondingParty, 'SPECIALIST');
+        assert.equal(order.clientAcceptedAt, null);
+        assert.equal(order.specialistAcceptedAt, null);
+
+        console.log('CORRECTO - Nueva versión de siete días');
 
         const outsider = await tx.user.create({
           data: {
@@ -183,7 +215,7 @@ test('725.1 - Contratación completa con PostgreSQL', async () => {
         console.log('CORRECTO - Tercero rechazado sin modificaciones');
 
         await controller.acceptWorkOrder(
-          req(clientUser),
+          req(specialistUser),
           job.id
         );
 
@@ -191,14 +223,14 @@ test('725.1 - Contratación completa con PostgreSQL', async () => {
           where: { id: order.id }
         });
 
-        assert.ok(order.clientAcceptedAt);
-        assert.equal(order.specialistAcceptedAt, null);
+        assert.equal(order.clientAcceptedAt, null);
+        assert.ok(order.specialistAcceptedAt);
         assert.equal(order.status, 'PENDING_ACCEPTANCE');
 
         console.log('CORRECTO - Primera aceptación registrada');
 
         await controller.acceptWorkOrder(
-          req(specialistUser),
+          req(clientUser),
           job.id
         );
 
@@ -223,6 +255,10 @@ test('725.1 - Contratación completa con PostgreSQL', async () => {
         assert.ok(order.specialistAcceptedAt);
         assert.equal(currentProposal.status, 'ACCEPTED');
         assert.equal(currentJob.status, 'AWAITING_PAYMENT');
+        assert.equal(currentJob.reviewPeriodHours, 168);
+        assert.equal(currentJob.reviewPeriodHours, order.reviewPeriodHours);
+        assert.equal(order.version, 2);
+        console.log('CORRECTO - Ambas partes contrataron siete días');
 
         assert.ok(payment);
         assert.equal(payment.status, 'PENDING');

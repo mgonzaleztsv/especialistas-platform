@@ -23,6 +23,7 @@ export default function MisSolicitudes() {
         scheduledDate: string;
         laborAmount: string;
         materialsAmount: string;
+        reviewPeriodHours: string;
       }
     >
   >({});
@@ -262,7 +263,8 @@ export default function MisSolicitudes() {
           ? new Date(workOrder.scheduledDate).toISOString().slice(0, 10)
           : '',
         laborAmount: String(workOrder.laborAmount ?? ''),
-        materialsAmount: String(workOrder.materialsAmount ?? '')
+        materialsAmount: String(workOrder.materialsAmount ?? ''),
+        reviewPeriodHours: String(workOrder.reviewPeriodHours ?? 48)
       }
     }));
 
@@ -285,7 +287,8 @@ export default function MisSolicitudes() {
           excludedScope: draft.excludedScope,
           scheduledDate: draft.scheduledDate || null,
           laborAmount: Number(draft.laborAmount),
-          materialsAmount: Number(draft.materialsAmount)
+          materialsAmount: Number(draft.materialsAmount),
+          reviewPeriodHours: Number(draft.reviewPeriodHours)
         })
       });
 
@@ -830,6 +833,14 @@ export default function MisSolicitudes() {
                     </p>
 
                     <p>
+                      <strong>Plazo de revisión:</strong>{' '}
+                      {workOrders[job.id].reviewPeriodHours === 168
+                        ? '7 días'
+                        : workOrders[job.id].reviewPeriodHours === 48
+                          ? '48 horas'
+                          : 'No definido'}
+                    </p>
+                    <p>
                       <strong>Total:</strong> $
                       {(
                         Number(workOrders[job.id].laborAmount) +
@@ -962,6 +973,25 @@ export default function MisSolicitudes() {
                               </label>
 
                               <label>
+  Plazo de revisión del trabajo
+  <select
+    value={workOrderDrafts[job.id]?.reviewPeriodHours ?? '48'}
+    onChange={(e) =>
+      setWorkOrderDrafts((prev) => ({
+        ...prev,
+        [job.id]: {
+          ...prev[job.id],
+          reviewPeriodHours: e.target.value
+        }
+      }))
+    }
+  >
+    <option value="48">48 horas — servicios sencillos</option>
+    <option value="168">7 días — trabajos complejos</option>
+  </select>
+</label>
+
+<label>
                                 Mano de obra
                                 <input
                                   type="number"

@@ -155,6 +155,9 @@ enum JobRequestStatus {
 }
 
 model JobRequest {
+  reviewPeriodHours Int?
+  workCompletedAt   DateTime?
+  reviewDeadline    DateTime?
   id          String           @id @default(uuid())
   clientId    String
   categoryId  String
@@ -251,6 +254,7 @@ enum WorkOrderClosureReason {
 }
 
 model WorkOrder {
+  reviewPeriodHours Int?
   id                   String          @id @default(uuid())
   jobRequestId         String
   proposalId           String
