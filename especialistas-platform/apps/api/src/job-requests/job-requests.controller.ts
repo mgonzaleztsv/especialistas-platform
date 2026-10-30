@@ -2455,6 +2455,25 @@ return {
           );
         }
 
+        // Una resolución administrativa no autoriza por sí misma
+        // la liberación de fondos. Se requiere una autorización
+        // financiera independiente, todavía no implementada.
+        const administrativelyClosedClaims =
+          await tx.completionClaim.count({
+            where: {
+              jobRequestId,
+              status: {
+                in: ['RESOLVED', 'REJECTED']
+              }
+            }
+          });
+
+        if (administrativelyClosedClaims > 0) {
+          throw new ConflictException(
+            'La reclamación fue cerrada administrativamente, pero la liberación de fondos requiere autorización financiera independiente'
+          );
+        }
+
         const updatedPayment = await tx.payment.updateMany({
           where: {
             id: currentJob.payment.id,
