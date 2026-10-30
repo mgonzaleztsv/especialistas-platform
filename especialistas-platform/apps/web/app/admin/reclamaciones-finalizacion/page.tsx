@@ -10,6 +10,7 @@ type Claim = {
   status: string;
   specialistResponseNotes: string | null;
   specialistRespondedAt: string | null;
+  disputedAt: string | null;
   correctionCompletedAt: string | null;
   correctionReviewDeadline: string | null;
   correctionCompletionNotes: string | null;
@@ -104,6 +105,16 @@ export default function AdminReclamacionesFinalizacion() {
     }
 
     const dias = diasTranscurridos(claim.createdAt);
+    return dias !== null && dias >= 30;
+  }
+
+  function alertaDisputa30Dias(claim: Claim) {
+    if (claim.status !== 'DISPUTED') {
+      return false;
+    }
+
+    const dias = diasTranscurridos(claim.disputedAt);
+
     return dias !== null && dias >= 30;
   }
 
@@ -250,6 +261,38 @@ export default function AdminReclamacionesFinalizacion() {
           {claim.jobRequest.city}, {claim.jobRequest.state}
         </p>
         <p><strong>Presentada:</strong> {fecha(claim.createdAt)}</p>
+
+        {claim.status === 'DISPUTED' && (
+          <div style={{ marginTop: 12 }}>
+            <p>
+              <strong>Inicio de la disputa:</strong>{' '}
+              {fecha(claim.disputedAt)}
+            </p>
+
+            {claim.disputedAt ? (
+              <p>
+                <strong>Tiempo desde el inicio de la disputa:</strong>{' '}
+                {diasTranscurridos(claim.disputedAt) ?? 'No disponible'} días.
+              </p>
+            ) : (
+              <p>
+                La fecha de inicio de esta disputa no está
+                registrada. Debe revisarse su historial.
+              </p>
+            )}
+
+            {alertaDisputa30Dias(claim) && (
+              <p>
+                <strong>
+                  Seguimiento prioritario: objetivo de 30 días alcanzado.
+                </strong>{' '}
+                La disputa continúa abierta y requiere revisión
+                administrativa. Esta alerta no constituye una
+                resolución ni autoriza liberar fondos.
+              </p>
+            )}
+          </div>
+        )}
 
         {alertaAntiguedad(claim) && (
           <p>

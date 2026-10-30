@@ -2341,6 +2341,8 @@ return {
           ? 'CORRECTION_REQUESTED'
           : 'DISPUTED';
 
+        const respondedAt = new Date();
+
         const updated = await tx.completionClaim.updateMany({
           where: {
             id: claimId,
@@ -2350,7 +2352,10 @@ return {
           data: {
             status,
             specialistResponseNotes: notes,
-            specialistRespondedAt: new Date()
+            specialistRespondedAt: respondedAt,
+            ...(status === 'DISPUTED'
+              ? { disputedAt: respondedAt }
+              : {})
           }
         });
 
@@ -2629,6 +2634,7 @@ return {
           data: {
             status: accepted ? 'RESOLVED' : 'DISPUTED',
             clientCorrectionRespondedAt: now,
+            ...(accepted ? {} : { disputedAt: now }),
             clientCorrectionResponseNotes: responseNotes,
             ...(accepted
               ? { clientCorrectionAcceptedAt: now }
@@ -4307,6 +4313,7 @@ return {
         status: true,
         specialistResponseNotes: true,
         specialistRespondedAt: true,
+        disputedAt: true,
         correctionCompletedAt: true,
         correctionReviewDeadline: true,
         correctionCompletionNotes: true,
@@ -4369,6 +4376,7 @@ return {
       status: claim.status,
       specialistResponseNotes: claim.specialistResponseNotes,
       specialistRespondedAt: claim.specialistRespondedAt,
+      disputedAt: claim.disputedAt,
       correctionCompletedAt: claim.correctionCompletedAt,
       correctionReviewDeadline: claim.correctionReviewDeadline,
       correctionCompletionNotes: claim.correctionCompletionNotes,
