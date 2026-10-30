@@ -597,3 +597,30 @@ model CompletionClaim {
   @@index([jobRequestId, status])
   @@index([clientId])
 }
+
+// Registro de eventos Stripe.
+// No autoriza ni ejecuta movimientos financieros.
+enum StripeWebhookEventStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+model StripeWebhookEvent {
+  id             String                   @id @default(uuid())
+  stripeEventId  String                   @unique
+  eventType      String
+  status         StripeWebhookEventStatus @default(RECEIVED)
+  livemode       Boolean                  @default(false)
+  receivedAt     DateTime                 @default(now())
+  processingAt   DateTime?
+  processedAt    DateTime?
+  failedAt       DateTime?
+  errorMessage   String?
+  attempts       Int                      @default(0)
+
+  @@index([status])
+  @@index([receivedAt])
+  @@index([eventType])
+}
