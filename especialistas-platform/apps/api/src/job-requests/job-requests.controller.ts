@@ -4307,6 +4307,12 @@ return {
         status: true,
         specialistResponseNotes: true,
         specialistRespondedAt: true,
+        correctionCompletedAt: true,
+        correctionReviewDeadline: true,
+        correctionCompletionNotes: true,
+        clientCorrectionAcceptedAt: true,
+        clientCorrectionRespondedAt: true,
+        clientCorrectionResponseNotes: true,
         resolutionNotes: true,
         resolvedAt: true,
         createdAt: true,
@@ -4357,6 +4363,12 @@ return {
       status: claim.status,
       specialistResponseNotes: claim.specialistResponseNotes,
       specialistRespondedAt: claim.specialistRespondedAt,
+      correctionCompletedAt: claim.correctionCompletedAt,
+      correctionReviewDeadline: claim.correctionReviewDeadline,
+      correctionCompletionNotes: claim.correctionCompletionNotes,
+      clientCorrectionAcceptedAt: claim.clientCorrectionAcceptedAt,
+      clientCorrectionRespondedAt: claim.clientCorrectionRespondedAt,
+      clientCorrectionResponseNotes: claim.clientCorrectionResponseNotes,
       resolutionNotes: claim.resolutionNotes,
       resolvedAt: claim.resolvedAt,
       createdAt: claim.createdAt,
@@ -4419,13 +4431,35 @@ return {
               in: ['DISPUTED', 'CORRECTION_REQUESTED']
             }
           },
-          select: { id: true }
+          select: {
+            id: true,
+            status: true,
+            correctionCompletedAt: true,
+            correctionReviewDeadline: true,
+            clientCorrectionRespondedAt: true
+          }
         });
 
         if (!claim) {
           throw new ConflictException(
             'La reclamación no existe o no está disponible para resolución'
           );
+        }
+
+        // Una corrección en curso no puede cerrarse por la vía
+        // administrativa ordinaria antes de finalizar la revisión.
+        // Las reclamaciones ya disputadas conservan su procedimiento.
+        if (claim.status === 'CORRECTION_REQUESTED') {
+          if (
+            !claim.correctionCompletedAt ||
+            !claim.correctionReviewDeadline ||
+            claim.clientCorrectionRespondedAt ||
+            new Date() < claim.correctionReviewDeadline
+          ) {
+            throw new ConflictException(
+              'La corrección sigue en curso o el plazo de revisión del cliente no ha vencido'
+            );
+          }
         }
 
         const updated = await tx.completionClaim.updateMany({

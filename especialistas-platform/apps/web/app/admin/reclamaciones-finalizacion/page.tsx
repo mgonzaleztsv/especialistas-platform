@@ -10,6 +10,12 @@ type Claim = {
   status: string;
   specialistResponseNotes: string | null;
   specialistRespondedAt: string | null;
+  correctionCompletedAt: string | null;
+  correctionReviewDeadline: string | null;
+  correctionCompletionNotes: string | null;
+  clientCorrectionAcceptedAt: string | null;
+  clientCorrectionRespondedAt: string | null;
+  clientCorrectionResponseNotes: string | null;
   resolutionNotes: string | null;
   resolvedAt: string | null;
   createdAt: string;
@@ -76,8 +82,39 @@ export default function AdminReclamacionesFinalizacion() {
     return new Date(value).toLocaleString();
   }
 
-  function puedeResolver(status: string) {
-    return ['DISPUTED', 'CORRECTION_REQUESTED'].includes(status);
+  function segundaRevisionVencida(claim: Claim) {
+    if (
+      claim.status !== 'CORRECTION_REQUESTED' ||
+      !claim.correctionCompletedAt ||
+      !claim.correctionReviewDeadline ||
+      claim.clientCorrectionRespondedAt
+    ) {
+      return false;
+    }
+
+    const vencimiento = new Date(
+      claim.correctionReviewDeadline
+    ).getTime();
+
+    return (
+      Number.isFinite(vencimiento) &&
+      vencimiento <= Date.now()
+    );
+  }
+
+  function puedeResolver(claim: Claim) {
+    if (claim.status === 'DISPUTED') {
+      return true;
+    }
+
+    if (claim.status !== 'CORRECTION_REQUESTED') {
+      return false;
+    }
+
+    // La vía administrativa ordinaria solamente se habilita
+    // cuando terminó la corrección y venció la segunda revisión
+    // sin una respuesta previa del cliente.
+    return segundaRevisionVencida(claim);
   }
 
   async function resolveClaim(
@@ -133,7 +170,13 @@ export default function AdminReclamacionesFinalizacion() {
     }
   }
 
-  const pendientes = claims.filter(c => puedeResolver(c.status));
+  const pendientes = claims
+    .filter(c => ['DISPUTED', 'CORRECTION_REQUESTED'].includes(c.status))
+    .sort(
+      (a, b) =>
+        Number(segundaRevisionVencida(b)) -
+        Number(segundaRevisionVencida(a))
+    );
   const esperando = claims.filter(c => c.status === 'PENDING');
   const historial = claims.filter(
     c => ['RESOLVED', 'REJECTED'].includes(c.status)
@@ -153,6 +196,16 @@ export default function AdminReclamacionesFinalizacion() {
         <h3>{claim.jobRequest.title}</h3>
 
         <p><strong>Estado:</strong> {estado(claim.status)}</p>
+
+        {claim.status === 'CORRECTION_REQUESTED' &&
+          !puedeResolver(claim) && (
+            <p>
+              <strong>Resolución administrativa no disponible:</strong>{' '}
+              la corrección continúa en curso o el cliente
+              todavía dispone de su período de revisión.
+              La reclamación sigue visible para seguimiento.
+            </p>
+          )}
         <p><strong>Cliente:</strong> {claim.jobRequest.client.name}</p>
         <p>
           <strong>Especialista:</strong>{' '}
@@ -164,6 +217,77 @@ export default function AdminReclamacionesFinalizacion() {
         </p>
         <p><strong>Presentada:</strong> {fecha(claim.createdAt)}</p>
         <p><strong>Reclamación:</strong> {claim.description}</p>
+
+        {claim.status === 'CORRECTION_REQUESTED' &&
+          !claim.correctionCompletedAt && (
+            <p>
+              <strong>Corrección pendiente:</strong>{' '}
+              el especialista todavía no ha comunicado su finalización.
+            </p>
+          )}
+
+        {claim.correctionCompletedAt && (
+          <div style={{ marginTop: 12 }}>
+            <p>
+              <strong>Corrección terminada:</strong>{' '}
+              {fecha(claim.correctionCompletedAt)}
+            </p>
+
+            {claim.correctionCompletionNotes && (
+              <p>
+                <strong>Explicación de las correcciones:</strong>{' '}
+                {claim.correctionCompletionNotes}
+              </p>
+            )}
+
+            <p>
+              <strong>Vencimiento de la segunda revisión:</strong>{' '}
+              {fecha(claim.correctionReviewDeadline)}
+            </p>
+
+            {segundaRevisionVencida(claim) && (
+              <p>
+                <strong>
+                  Seguimiento prioritario: plazo vencido sin
+                  respuesta del cliente.
+                </strong>{' '}
+                El vencimiento no significa aceptación de
+                las correcciones ni autoriza liberar fondos.
+              </p>
+            )}
+
+            {claim.status === 'CORRECTION_REQUESTED' &&
+              !claim.clientCorrectionRespondedAt &&
+              !segundaRevisionVencida(claim) && (
+                <p>
+                  Pendiente de revisión del cliente.
+                </p>
+              )}
+
+            {claim.clientCorrectionRespondedAt && (
+              <>
+                <p>
+                  <strong>Respuesta del cliente:</strong>{' '}
+                  {claim.clientCorrectionAcceptedAt
+                    ? 'Aceptó las correcciones'
+                    : 'Manifestó que persisten los defectos'}
+                </p>
+
+                <p>
+                  <strong>Fecha de respuesta:</strong>{' '}
+                  {fecha(claim.clientCorrectionRespondedAt)}
+                </p>
+
+                {claim.clientCorrectionResponseNotes && (
+                  <p>
+                    <strong>Explicación del cliente:</strong>{' '}
+                    {claim.clientCorrectionResponseNotes}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         {claim.specialistResponseNotes && (
           <>
@@ -191,7 +315,7 @@ export default function AdminReclamacionesFinalizacion() {
           </>
         )}
 
-        {puedeResolver(claim.status) && (
+        {puedeResolver(claim) && (
           <div style={{ marginTop: 16 }}>
             <label htmlFor={`notes-${claim.id}`}>
               <strong>Justificación administrativa</strong>
