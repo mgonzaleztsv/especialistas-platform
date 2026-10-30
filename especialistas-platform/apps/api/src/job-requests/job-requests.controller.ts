@@ -4334,6 +4334,12 @@ return {
                 }
               }
             },
+            payment: {
+              select: {
+                status: true,
+                paidAt: true
+              }
+            },
             proposals: {
               where: { status: 'ACCEPTED' },
               take: 1,
@@ -4373,6 +4379,8 @@ return {
       resolvedAt: claim.resolvedAt,
       createdAt: claim.createdAt,
       updatedAt: claim.updatedAt,
+      paymentPaidAt: claim.jobRequest.payment?.paidAt ?? null,
+      paymentStatus: claim.jobRequest.payment?.status ?? null,
       jobRequest: {
         id: claim.jobRequest.id,
         title: claim.jobRequest.title,

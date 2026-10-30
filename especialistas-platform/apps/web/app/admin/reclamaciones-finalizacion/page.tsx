@@ -20,6 +20,8 @@ type Claim = {
   resolvedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  paymentPaidAt: string | null;
+  paymentStatus: string | null;
   jobRequest: {
     id: string;
     title: string;
@@ -80,6 +82,38 @@ export default function AdminReclamacionesFinalizacion() {
   function fecha(value: string | null | undefined) {
     if (!value) return 'No disponible';
     return new Date(value).toLocaleString();
+  }
+
+  function diasTranscurridos(value: string | null | undefined) {
+    if (!value) return null;
+
+    const inicio = new Date(value).getTime();
+
+    if (!Number.isFinite(inicio) || inicio > Date.now()) {
+      return null;
+    }
+
+    return Math.floor(
+      (Date.now() - inicio) / (24 * 60 * 60 * 1000)
+    );
+  }
+
+  function alertaAntiguedad(claim: Claim) {
+    if (['RESOLVED', 'REJECTED'].includes(claim.status)) {
+      return false;
+    }
+
+    const dias = diasTranscurridos(claim.createdAt);
+    return dias !== null && dias >= 30;
+  }
+
+  function alertaSeguimientoPago(claim: Claim) {
+    if (claim.paymentStatus !== 'PAID') {
+      return false;
+    }
+
+    const dias = diasTranscurridos(claim.paymentPaidAt);
+    return dias !== null && dias >= 90;
   }
 
   function segundaRevisionVencida(claim: Claim) {
@@ -216,6 +250,26 @@ export default function AdminReclamacionesFinalizacion() {
           {claim.jobRequest.city}, {claim.jobRequest.state}
         </p>
         <p><strong>Presentada:</strong> {fecha(claim.createdAt)}</p>
+
+        {alertaAntiguedad(claim) && (
+          <p>
+            <strong>Seguimiento por antigüedad:</strong>{' '}
+            la reclamación lleva al menos 30 días desde
+            su presentación y sigue abierta. Debe revisarse
+            su situación; esto no equivale necesariamente
+            a 30 días desde el inicio de una disputa.
+          </p>
+        )}
+
+        {alertaSeguimientoPago(claim) && (
+          <p>
+            <strong>Alerta financiera de 90 días:</strong>{' '}
+            han transcurrido al menos 90 días desde el cobro
+            registrado y el pago figura como pendiente de
+            liberación. Revisar urgentemente con el proveedor.
+            Esta alerta no autoriza retener ni liberar fondos.
+          </p>
+        )}
         <p><strong>Reclamación:</strong> {claim.description}</p>
 
         {claim.status === 'CORRECTION_REQUESTED' &&
