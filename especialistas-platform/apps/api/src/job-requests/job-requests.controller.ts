@@ -3973,6 +3973,173 @@ return {
     });
   }
 
+  @Get('admin/completion-claims')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async getAdminCompletionClaims() {
+    const claims = await this.prisma.completionClaim.findMany({
+      select: {
+        id: true,
+        jobRequestId: true,
+        description: true,
+        status: true,
+        specialistResponseNotes: true,
+        specialistRespondedAt: true,
+        resolutionNotes: true,
+        resolvedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        jobRequest: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            city: true,
+            state: true,
+            client: {
+              select: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true
+                  }
+                }
+              }
+            },
+            proposals: {
+              where: { status: 'ACCEPTED' },
+              take: 1,
+              select: {
+                specialist: {
+                  select: {
+                    user: {
+                      select: {
+                        id: true,
+                        name: true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    return claims.map(claim => ({
+      id: claim.id,
+      jobRequestId: claim.jobRequestId,
+      description: claim.description,
+      status: claim.status,
+      specialistResponseNotes: claim.specialistResponseNotes,
+      specialistRespondedAt: claim.specialistRespondedAt,
+      resolutionNotes: claim.resolutionNotes,
+      resolvedAt: claim.resolvedAt,
+      createdAt: claim.createdAt,
+      updatedAt: claim.updatedAt,
+      jobRequest: {
+        id: claim.jobRequest.id,
+        title: claim.jobRequest.title,
+        status: claim.jobRequest.status,
+        city: claim.jobRequest.city,
+        state: claim.jobRequest.state,
+        client: claim.jobRequest.client.user,
+        specialist:
+          claim.jobRequest.proposals[0]?.specialist.user ?? null
+      }
+    }));
+  }
+
+  @Post(':id/completion-claims/:claimId/resolve')
+  @UseGuards(JwtAuthGuard, AdminGuard)
+  async resolveCompletionClaimByAdmin(
+    @Param('id') jobRequestId: string,
+    @Param('claimId') claimId: string,
+    @Body() body: any
+  ) {
+    const decision = String(body?.decision ?? '').trim().toUpperCase();
+    const notes = String(body?.resolutionNotes ?? '').trim();
+
+    if (!['RESOLVED', 'REJECTED'].includes(decision)) {
+      throw new BadRequestException(
+        'La decisión debe ser RESOLVED o REJECTED'
+      );
+    }
+
+    if (notes.length < 10 || notes.length > 4000) {
+      throw new BadRequestException(
+        'La justificación debe contener entre 10 y 4000 caracteres'
+      );
+    }
+
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
+        const lockedJobs = await tx.$queryRaw`
+          SELECT "id"
+          FROM "JobRequest"
+          WHERE "id" = ${jobRequestId}
+          FOR UPDATE
+        `;
+
+        if (!Array.isArray(lockedJobs) || lockedJobs.length !== 1) {
+          throw new NotFoundException(
+            'El trabajo no existe'
+          );
+        }
+
+        const claim = await tx.completionClaim.findFirst({
+          where: {
+            id: claimId,
+            jobRequestId,
+            status: {
+              in: ['DISPUTED', 'CORRECTION_REQUESTED']
+            }
+          },
+          select: { id: true }
+        });
+
+        if (!claim) {
+          throw new ConflictException(
+            'La reclamación no existe o no está disponible para resolución'
+          );
+        }
+
+        const updated = await tx.completionClaim.updateMany({
+          where: {
+            id: claimId,
+            jobRequestId,
+            status: {
+              in: ['DISPUTED', 'CORRECTION_REQUESTED']
+            }
+          },
+          data: {
+            status: decision as 'RESOLVED' | 'REJECTED',
+            resolutionNotes: notes,
+            resolvedAt: new Date()
+          }
+        });
+
+        if (updated.count !== 1) {
+          throw new ConflictException(
+            'La reclamación cambió antes de registrar la resolución'
+          );
+        }
+
+        return tx.completionClaim.findUniqueOrThrow({
+          where: { id: claimId },
+          select: {
+            id: true,
+            jobRequestId: true,
+            status: true,
+            resolutionNotes: true,
+            resolvedAt: true
+          }
+        });
+      }, { isolationLevel: 'Serializable' })
+    );
+  }
+
   @Get('admin/damage-claims')
   @UseGuards(JwtAuthGuard, AdminGuard)
   async getAdminDamageClaims() {

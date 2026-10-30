@@ -47,6 +47,7 @@ export default function Dashboard() {
 
               <p><a href="/admin/verificaciones">Revisar verificaciones</a></p>
               <p><a href="/admin/reclamaciones">Revisar reclamaciones de daños</a></p>
+              <p><a href="/admin/reclamaciones-finalizacion">Reclamaciones por finalización</a></p>
               <p><a href="/admin/terminaciones">Revisar terminaciones disputadas</a></p>
             </>
           ) : (
