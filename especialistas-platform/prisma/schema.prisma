@@ -578,6 +578,13 @@ model CompletionClaim {
   status         CompletionClaimStatus @default(PENDING)
   specialistResponseNotes String?
   specialistRespondedAt   DateTime?
+
+  correctionCompletedAt     DateTime?
+  correctionReviewDeadline  DateTime?
+  correctionCompletionNotes String?
+  clientCorrectionAcceptedAt DateTime?
+  clientCorrectionRespondedAt DateTime?
+  clientCorrectionResponseNotes String?
   resolutionNotes String?
   resolvedAt     DateTime?
   createdAt      DateTime              @default(now())

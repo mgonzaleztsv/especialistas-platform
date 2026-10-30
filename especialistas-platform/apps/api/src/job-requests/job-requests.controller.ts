@@ -2147,6 +2147,12 @@ return {
         status: true,
         specialistResponseNotes: true,
         specialistRespondedAt: true,
+        correctionCompletedAt: true,
+        correctionReviewDeadline: true,
+        correctionCompletionNotes: true,
+        clientCorrectionAcceptedAt: true,
+        clientCorrectionRespondedAt: true,
+        clientCorrectionResponseNotes: true,
         resolutionNotes: true,
         resolvedAt: true,
         createdAt: true,
@@ -2358,6 +2364,304 @@ return {
           where: { id: claimId }
         });
       }, { isolationLevel: 'Serializable' })
+    );
+  }
+
+  @Post(':id/completion-claims/:claimId/correction-complete')
+  @UseGuards(JwtAuthGuard)
+  async completeCorrectionBySpecialist(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Param('claimId') claimId: string,
+    @Body() body: any
+  ) {
+    const notes = String(body?.notes ?? '').trim();
+
+    if (notes.length < 10 || notes.length > 4000) {
+      throw new BadRequestException(
+        'La explicación de las correcciones debe contener entre 10 y 4000 caracteres'
+      );
+    }
+
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId },
+      select: { id: true }
+    });
+
+    if (!specialist) {
+      throw new ForbiddenException(
+        'Solo un especialista puede comunicar la finalización de correcciones'
+      );
+    }
+
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
+        const lockedJobs = await tx.$queryRaw`
+          SELECT "id"
+          FROM "JobRequest"
+          WHERE "id" = ${jobRequestId}
+          FOR UPDATE
+        `;
+
+        if (!Array.isArray(lockedJobs) || lockedJobs.length !== 1) {
+          throw new ConflictException(
+            'El trabajo no está disponible'
+          );
+        }
+
+        const job = await tx.jobRequest.findFirst({
+          where: {
+            id: jobRequestId,
+            status: 'AWAITING_CLIENT_CONFIRMATION',
+            proposals: {
+              some: {
+                specialistId: specialist.id,
+                status: 'ACCEPTED'
+              }
+            }
+          },
+          select: {
+            id: true,
+            reviewPeriodHours: true
+          }
+        });
+
+        if (!job) {
+          throw new ForbiddenException(
+            'El trabajo no está pendiente de revisión o no pertenece al especialista contratado'
+          );
+        }
+
+        if (
+          job.reviewPeriodHours !== 48 &&
+          job.reviewPeriodHours !== 168
+        ) {
+          throw new ConflictException(
+            'El trabajo no tiene un plazo de revisión válido'
+          );
+        }
+
+        const claim = await tx.completionClaim.findFirst({
+          where: {
+            id: claimId,
+            jobRequestId,
+            status: 'CORRECTION_REQUESTED',
+            correctionCompletedAt: null
+          },
+          select: { id: true }
+        });
+
+        if (!claim) {
+          throw new ConflictException(
+            'La reclamación no admite una nueva notificación de corrección terminada'
+          );
+        }
+
+        const now = new Date();
+        const deadline = new Date(
+          now.getTime() +
+          job.reviewPeriodHours * 60 * 60 * 1000
+        );
+
+        const updated = await tx.completionClaim.updateMany({
+          where: {
+            id: claimId,
+            jobRequestId,
+            status: 'CORRECTION_REQUESTED',
+            correctionCompletedAt: null
+          },
+          data: {
+            correctionCompletedAt: now,
+            correctionReviewDeadline: deadline,
+            correctionCompletionNotes: notes
+          }
+        });
+
+        if (updated.count !== 1) {
+          throw new ConflictException(
+            'La reclamación cambió antes de registrar la corrección'
+          );
+        }
+
+        // No se altera el estado del trabajo ni del pago.
+        // La reclamación sigue abierta hasta la revisión posterior.
+
+        return tx.completionClaim.findUniqueOrThrow({
+          where: { id: claimId },
+          select: {
+            id: true,
+            jobRequestId: true,
+            status: true,
+            correctionCompletedAt: true,
+            correctionReviewDeadline: true,
+            correctionCompletionNotes: true,
+            clientCorrectionAcceptedAt: true
+          }
+        });
+      }, {
+        isolationLevel: 'Serializable'
+      })
+    );
+  }
+
+  @Post(':id/completion-claims/:claimId/correction-review')
+  @UseGuards(JwtAuthGuard)
+  async reviewCompletedCorrectionByClient(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Param('claimId') claimId: string,
+    @Body() body: any
+  ) {
+    const action = String(body?.action ?? '').trim().toUpperCase();
+    const notes = String(body?.notes ?? '').trim();
+
+    if (!['ACCEPT', 'DISPUTE'].includes(action)) {
+      throw new BadRequestException(
+        'La respuesta debe ser ACCEPT o DISPUTE'
+      );
+    }
+
+    if (
+      notes.length > 4000 ||
+      (notes.length > 0 && notes.length < 10) ||
+      (action === 'DISPUTE' && notes.length < 10)
+    ) {
+      throw new BadRequestException(
+        'La explicación debe contener entre 10 y 4000 caracteres'
+      );
+    }
+
+    const client = await this.prisma.client.findUnique({
+      where: { userId: req.user.userId },
+      select: { id: true }
+    });
+
+    if (!client) {
+      throw new ForbiddenException(
+        'Solo el cliente puede revisar las correcciones'
+      );
+    }
+
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
+        const lockedJobs = await tx.$queryRaw`
+          SELECT "id"
+          FROM "JobRequest"
+          WHERE "id" = ${jobRequestId}
+          FOR UPDATE
+        `;
+
+        if (!Array.isArray(lockedJobs) || lockedJobs.length !== 1) {
+          throw new ConflictException(
+            'El trabajo no está disponible'
+          );
+        }
+
+        const job = await tx.jobRequest.findFirst({
+          where: {
+            id: jobRequestId,
+            clientId: client.id,
+            status: 'AWAITING_CLIENT_CONFIRMATION'
+          },
+          select: { id: true }
+        });
+
+        if (!job) {
+          throw new ForbiddenException(
+            'El trabajo no está pendiente de revisión o no pertenece al cliente'
+          );
+        }
+
+        const claim = await tx.completionClaim.findFirst({
+          where: {
+            id: claimId,
+            jobRequestId,
+            clientId: client.id,
+            status: 'CORRECTION_REQUESTED',
+            correctionCompletedAt: { not: null },
+            correctionReviewDeadline: { not: null },
+            clientCorrectionRespondedAt: null
+          },
+          select: {
+            id: true,
+            correctionReviewDeadline: true
+          }
+        });
+
+        if (!claim) {
+          throw new ConflictException(
+            'La corrección no está disponible para revisión o ya fue respondida'
+          );
+        }
+
+        const now = new Date();
+
+        if (
+          action === 'DISPUTE' &&
+          (
+            !claim.correctionReviewDeadline ||
+            now >= claim.correctionReviewDeadline
+          )
+        ) {
+          throw new ConflictException(
+            'El plazo para disputar la corrección ha vencido'
+          );
+        }
+
+        const accepted = action === 'ACCEPT';
+
+        const responseNotes = notes || (
+          'El cliente acepta expresamente las correcciones realizadas.'
+        );
+
+        const updated = await tx.completionClaim.updateMany({
+          where: {
+            id: claimId,
+            jobRequestId,
+            clientId: client.id,
+            status: 'CORRECTION_REQUESTED',
+            correctionCompletedAt: { not: null },
+            correctionReviewDeadline: accepted
+              ? { not: null }
+              : { gt: now },
+            clientCorrectionRespondedAt: null
+          },
+          data: {
+            status: accepted ? 'RESOLVED' : 'DISPUTED',
+            clientCorrectionRespondedAt: now,
+            clientCorrectionResponseNotes: responseNotes,
+            ...(accepted
+              ? { clientCorrectionAcceptedAt: now }
+              : {})
+          }
+        });
+
+        if (updated.count !== 1) {
+          throw new ConflictException(
+            'La reclamación cambió antes de registrar la respuesta'
+          );
+        }
+
+        // Esta decisión NO autoriza movimientos financieros.
+        // No se modifica Payment ni el estado de JobRequest.
+
+        return tx.completionClaim.findUniqueOrThrow({
+          where: { id: claimId },
+          select: {
+            id: true,
+            jobRequestId: true,
+            status: true,
+            correctionCompletedAt: true,
+            correctionReviewDeadline: true,
+            correctionCompletionNotes: true,
+            clientCorrectionAcceptedAt: true,
+            clientCorrectionRespondedAt: true,
+            clientCorrectionResponseNotes: true
+          }
+        });
+      }, {
+        isolationLevel: 'Serializable'
+      })
     );
   }
 

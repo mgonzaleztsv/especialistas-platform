@@ -4,6 +4,13 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 
 export default function MisSolicitudes() {
+
+  const [revisionCorreccionDrafts, setRevisionCorreccionDrafts] =
+    useState<Record<string, string>>({});
+
+  const [enviandoRevisionCorreccion, setEnviandoRevisionCorreccion] =
+    useState<string | null>(null);
+
   const [items, setItems] = useState<any[]>([]);
   const [error, setError] = useState('');
   const [openJobId, setOpenJobId] = useState<string | null>(null);
@@ -387,6 +394,96 @@ export default function MisSolicitudes() {
       setError(e.message || 'No se pudo confirmar el pago.');
     } finally {
       setProcessingPayment(null);
+    }
+  }
+
+
+  async function responderRevisionCorreccion(
+    jobId: string,
+    claimId: string,
+    action: 'ACCEPT' | 'DISPUTE'
+  ) {
+    if (enviandoRevisionCorreccion !== null) return;
+
+    const notes = (
+      revisionCorreccionDrafts[claimId] || ''
+    ).trim();
+
+    if (
+      notes.length > 4000 ||
+      (notes.length > 0 && notes.length < 10) ||
+      (action === 'DISPUTE' && notes.length < 10)
+    ) {
+      setError(
+        'La explicación debe tener entre 10 y 4000 caracteres. ' +
+        'Al aceptar puedes dejarla vacía.'
+      );
+      return;
+    }
+
+    const mensaje = action === 'ACCEPT'
+      ? '¿Confirmas que las correcciones quedaron satisfactorias? ' +
+        'Tu respuesta quedará registrada.'
+      : '¿Confirmas que persisten los defectos y deseas disputar ' +
+        'las correcciones?';
+
+    if (!window.confirm(mensaje)) return;
+
+    setEnviandoRevisionCorreccion(claimId);
+    setError('');
+
+    try {
+      await api(
+        `/job-requests/${jobId}/completion-claims/${claimId}/correction-review`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ action, notes })
+        }
+      );
+
+      const claims = await api(
+        `/job-requests/${jobId}/completion-claims`
+      );
+
+      if (!Array.isArray(claims)) {
+        throw new Error(
+          'La respuesta se envió, pero no se pudo actualizar el historial.'
+        );
+      }
+
+      setCompletionClaims(prev => ({
+        ...prev,
+        [jobId]: claims
+      }));
+
+      setRevisionCorreccionDrafts(prev => ({
+        ...prev,
+        [claimId]: ''
+      }));
+    } catch (e: any) {
+      const mensajeError =
+        e.message || 'No se pudo registrar la segunda revisión.';
+
+      // Actualizar el estado real por si la respuesta sí quedó
+      // guardada pero falló la recarga del historial.
+      try {
+        const claims = await api(
+          `/job-requests/${jobId}/completion-claims`
+        );
+
+        if (Array.isArray(claims)) {
+          setCompletionClaims(prev => ({
+            ...prev,
+            [jobId]: claims
+          }));
+        }
+      } catch {
+        // Conservar el error original.
+      }
+
+      setError(mensajeError);
+    } finally {
+      setEnviandoRevisionCorreccion(null);
     }
   }
 
@@ -1367,6 +1464,161 @@ export default function MisSolicitudes() {
                         }[claim.status as 'PENDING' | 'CORRECTION_REQUESTED' |
                           'DISPUTED' | 'RESOLVED' | 'REJECTED'] || claim.status}</p>
                         <p><strong>Reclamación:</strong> {claim.description}</p>
+
+                        {claim.correctionCompletedAt && (
+                          <div style={{
+                            marginTop: '12px',
+                            padding: '12px',
+                            border: '1px solid #ccc',
+                            borderRadius: '8px'
+                          }}>
+                            <h5>Segunda revisión de las correcciones</h5>
+
+                            <p>
+                              <strong>Corrección terminada:</strong>{' '}
+                              {new Date(
+                                claim.correctionCompletedAt
+                              ).toLocaleString()}
+                            </p>
+
+                            {claim.correctionCompletionNotes && (
+                              <p>
+                                <strong>Explicación del especialista:</strong>{' '}
+                                {claim.correctionCompletionNotes}
+                              </p>
+                            )}
+
+                            {claim.correctionReviewDeadline && (
+                              <p>
+                                <strong>Fin del nuevo plazo de revisión:</strong>{' '}
+                                {new Date(
+                                  claim.correctionReviewDeadline
+                                ).toLocaleString()}
+                              </p>
+                            )}
+
+                            {claim.clientCorrectionRespondedAt ? (
+                              <div>
+                                <p>
+                                  <strong>Tu respuesta:</strong>{' '}
+                                  {claim.clientCorrectionAcceptedAt
+                                    ? 'Correcciones aceptadas'
+                                    : 'Persisten los defectos'}
+                                </p>
+
+                                {claim.clientCorrectionResponseNotes && (
+                                  <p>
+                                    <strong>Explicación:</strong>{' '}
+                                    {claim.clientCorrectionResponseNotes}
+                                  </p>
+                                )}
+
+                                <p>
+                                  <strong>Fecha de respuesta:</strong>{' '}
+                                  {new Date(
+                                    claim.clientCorrectionRespondedAt
+                                  ).toLocaleString()}
+                                </p>
+                              </div>
+                            ) : claim.status === 'CORRECTION_REQUESTED' &&
+                              job.status ===
+                                'AWAITING_CLIENT_CONFIRMATION' ? (
+                              <div>
+                                <p>
+                                  Revisa las correcciones y registra tu decisión.
+                                  Aceptarlas no autoriza automáticamente
+                                  la liberación del pago.
+                                </p>
+
+                                <label>
+                                  Explicación de tu respuesta
+                                  <textarea
+                                    rows={4}
+                                    maxLength={4000}
+                                    value={
+                                      revisionCorreccionDrafts[claim.id] || ''
+                                    }
+                                    onChange={e =>
+                                      setRevisionCorreccionDrafts(prev => ({
+                                        ...prev,
+                                        [claim.id]: e.target.value
+                                      }))
+                                    }
+                                    placeholder={
+                                      'Describe los defectos que persisten ' +
+                                      'o explica por qué aceptas la corrección.'
+                                    }
+                                    style={{
+                                      display: 'block',
+                                      width: '100%',
+                                      marginTop: '8px'
+                                    }}
+                                  />
+                                </label>
+
+                                <p>
+                                  Para disputar necesitas una explicación
+                                  de 10 a 4000 caracteres.
+                                  Para aceptar, la explicación es opcional.
+                                </p>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    responderRevisionCorreccion(
+                                      job.id,
+                                      claim.id,
+                                      'ACCEPT'
+                                    )
+                                  }
+                                  disabled={
+                                    enviandoRevisionCorreccion !== null ||
+                                    (
+                                      (revisionCorreccionDrafts[claim.id] || '')
+                                        .trim().length > 0 &&
+                                      (revisionCorreccionDrafts[claim.id] || '')
+                                        .trim().length < 10
+                                    )
+                                  }
+                                >
+                                  Aceptar correcciones
+                                </button>
+
+                                {' '}
+
+                                {claim.correctionReviewDeadline &&
+                                new Date(
+                                  claim.correctionReviewDeadline
+                                ).getTime() > Date.now() ? (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      responderRevisionCorreccion(
+                                        job.id,
+                                        claim.id,
+                                        'DISPUTE'
+                                      )
+                                    }
+                                    disabled={
+                                      enviandoRevisionCorreccion !== null ||
+                                      (revisionCorreccionDrafts[claim.id] || '')
+                                        .trim().length < 10
+                                    }
+                                  >
+                                    Persisten los defectos
+                                  </button>
+                                ) : (
+                                  <p>
+                                    El plazo para disputar las correcciones
+                                    ha vencido. La aceptación expresa
+                                    permanece disponible.
+                                  </p>
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+
                         <p><strong>Presentada:</strong>{' '}
                           {new Date(claim.createdAt).toLocaleString()}
                         </p>

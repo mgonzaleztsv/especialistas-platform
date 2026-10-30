@@ -40,6 +40,209 @@ export default function MisTrabajos() {
   const [damageClaimDisputeId, setDamageClaimDisputeId] = useState<string | null>(null);
   const [damageClaimDisputeDrafts, setDamageClaimDisputeDrafts] = useState<Record<string, string>>({});
 
+  const [reclamacionesFinalizacion, setReclamacionesFinalizacion] =
+    useState<Record<string, any[]>>({});
+
+  const [consultandoReclamacionesFinalizacion, setConsultandoReclamacionesFinalizacion] =
+    useState<string | null>(null);
+
+  const [borradoresReclamacionFinalizacion, setBorradoresReclamacionFinalizacion] =
+    useState<Record<string, string>>({});
+
+  const [respuestaReclamacionEnProceso, setRespuestaReclamacionEnProceso] =
+    useState<string | null>(null);
+
+  const [borradoresCorreccionTerminada, setBorradoresCorreccionTerminada] =
+    useState<Record<string, string>>({});
+
+
+
+
+
+  async function notificarCorreccionTerminada(
+    jobId: string,
+    claimId: string
+  ) {
+    if (respuestaReclamacionEnProceso !== null) return;
+
+    const notes = (
+      borradoresCorreccionTerminada[claimId] || ''
+    ).trim();
+
+    if (notes.length < 10 || notes.length > 4000) {
+      setError(
+        'La explicación debe contener entre 10 y 4000 caracteres.'
+      );
+      return;
+    }
+
+    if (!window.confirm(
+      '¿Confirmas que terminaste las correcciones y deseas iniciar ' +
+      'el nuevo período de revisión del cliente?'
+    )) {
+      return;
+    }
+
+    setRespuestaReclamacionEnProceso(claimId);
+    setError('');
+
+    try {
+      await api(
+        `/job-requests/${jobId}/completion-claims/${claimId}/correction-complete`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ notes })
+        }
+      );
+
+      const claims = await api(
+        `/job-requests/${jobId}/completion-claims`
+      );
+
+      if (!Array.isArray(claims)) {
+        throw new Error(
+          'No fue posible actualizar el historial de correcciones.'
+        );
+      }
+
+      setReclamacionesFinalizacion(prev => ({
+        ...prev,
+        [jobId]: claims
+      }));
+
+      setBorradoresCorreccionTerminada(prev => ({
+        ...prev,
+        [claimId]: ''
+      }));
+    } catch (e: any) {
+      setError(
+        e.message || 'No se pudo registrar la corrección terminada.'
+      );
+
+      // Verificar el estado real si la operación se registró,
+      // pero ocurrió un problema al actualizar la pantalla.
+      try {
+        const claims = await api(
+          `/job-requests/${jobId}/completion-claims`
+        );
+
+        if (Array.isArray(claims)) {
+          setReclamacionesFinalizacion(prev => ({
+            ...prev,
+            [jobId]: claims
+          }));
+        }
+      } catch {
+        // Conservar el mensaje original.
+      }
+    } finally {
+      setRespuestaReclamacionEnProceso(null);
+    }
+  }
+
+  async function consultarReclamacionesFinalizacion(jobId: string) {
+    setConsultandoReclamacionesFinalizacion(jobId);
+    setError('');
+
+    try {
+      const claims = await api(
+        `/job-requests/${jobId}/completion-claims`
+      );
+
+      if (!Array.isArray(claims)) {
+        throw new Error('Respuesta inesperada al consultar reclamaciones');
+      }
+
+      setReclamacionesFinalizacion(prev => ({
+        ...prev,
+        [jobId]: claims
+      }));
+    } catch (e: any) {
+      setError(
+        e.message || 'No se pudieron consultar las reclamaciones.'
+      );
+    } finally {
+      setConsultandoReclamacionesFinalizacion(null);
+    }
+  }
+
+  async function responderReclamacionFinalizacion(
+    jobId: string,
+    claimId: string,
+    action: 'ACCEPT_CORRECTION' | 'DISPUTE'
+  ) {
+    if (respuestaReclamacionEnProceso !== null) return;
+
+    const notes = (
+      borradoresReclamacionFinalizacion[claimId] || ''
+    ).trim();
+
+    if (notes.length < 10 || notes.length > 4000) {
+      setError('La explicación debe contener entre 10 y 4000 caracteres.');
+      return;
+    }
+
+    const mensaje = action === 'ACCEPT_CORRECTION'
+      ? '¿Confirmas que aceptas realizar las correcciones solicitadas?'
+      : '¿Confirmas que deseas disputar esta reclamación?';
+
+    if (!window.confirm(mensaje)) return;
+
+    setRespuestaReclamacionEnProceso(claimId);
+    setError('');
+
+    try {
+      await api(
+        `/job-requests/${jobId}/completion-claims/${claimId}/respond`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ action, notes })
+        }
+      );
+
+      const claims = await api(
+        `/job-requests/${jobId}/completion-claims`
+      );
+
+      if (!Array.isArray(claims)) {
+        throw new Error('No se pudo actualizar el historial');
+      }
+
+      setReclamacionesFinalizacion(prev => ({
+        ...prev,
+        [jobId]: claims
+      }));
+
+      setBorradoresReclamacionFinalizacion(prev => ({
+        ...prev,
+        [claimId]: ''
+      }));
+    } catch (e: any) {
+      setError(
+        e.message || 'No se pudo registrar la respuesta.'
+      );
+
+      // Una respuesta pudo haberse guardado aunque fallara
+      // la recarga. Volvemos a consultar el estado real.
+      try {
+        const claims = await api(
+          `/job-requests/${jobId}/completion-claims`
+        );
+
+        if (Array.isArray(claims)) {
+          setReclamacionesFinalizacion(prev => ({
+            ...prev,
+            [jobId]: claims
+          }));
+        }
+      } catch {
+        // Se conserva el error original para el usuario.
+      }
+    } finally {
+      setRespuestaReclamacionEnProceso(null);
+    }
+  }
+
   function cargarTrabajos() {
     setLoading(true);
     setError('');
@@ -463,6 +666,286 @@ export default function MisTrabajos() {
               </p>
 
               <p>{job.description}</p>
+
+              {(job.status === 'AWAITING_CLIENT_CONFIRMATION' ||
+                job.status === 'COMPLETED') && (
+                <section style={{
+                  marginTop: '16px',
+                  padding: '12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '8px'
+                }}>
+                  <h3>Reclamaciones por finalización</h3>
+
+                  <p>
+                    Consulta los defectos reportados por el cliente y
+                    responde a las reclamaciones pendientes.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      consultarReclamacionesFinalizacion(job.id)
+                    }
+                    disabled={
+                      consultandoReclamacionesFinalizacion === job.id
+                    }
+                  >
+                    {consultandoReclamacionesFinalizacion === job.id
+                      ? 'Consultando...'
+                      : 'Consultar reclamaciones del cliente'}
+                  </button>
+
+                  {reclamacionesFinalizacion[job.id] && (
+                    <div style={{ marginTop: '12px' }}>
+                      {reclamacionesFinalizacion[job.id].length === 0 && (
+                        <p>No hay reclamaciones registradas.</p>
+                      )}
+
+                      {reclamacionesFinalizacion[job.id].map(
+                        (claim: any) => (
+                          <div
+                            key={claim.id}
+                            style={{
+                              marginTop: '12px',
+                              padding: '12px',
+                              border: '1px solid #ccc',
+                              borderRadius: '6px'
+                            }}
+                          >
+                            <p>
+                              <strong>Estado:</strong>{' '}
+                              {({
+                                PENDING: 'Pendiente de respuesta',
+                                CORRECTION_REQUESTED: 'Corrección aceptada',
+                                DISPUTED: 'En disputa',
+                                RESOLVED: 'Resuelta',
+                                REJECTED: 'Rechazada'
+                              } as Record<string, string>)[claim.status]
+                                || claim.status}
+                            </p>
+
+                            <p>
+                              <strong>Reclamación del cliente:</strong>{' '}
+                              {claim.description}
+                            </p>
+
+                            {claim.createdAt && (
+                              <p>
+                                <strong>Presentada:</strong>{' '}
+                                {new Date(claim.createdAt).toLocaleString()}
+                              </p>
+                            )}
+
+                            {claim.specialistResponseNotes && (
+                              <p>
+                                <strong>Tu respuesta:</strong>{' '}
+                                {claim.specialistResponseNotes}
+                              </p>
+                            )}
+
+                            {claim.resolutionNotes && (
+                              <p>
+                                <strong>Resolución administrativa:</strong>{' '}
+                                {claim.resolutionNotes}
+                              </p>
+                            )}
+
+                            {claim.status === 'CORRECTION_REQUESTED' && (
+                              <div style={{
+                                marginTop: '12px',
+                                padding: '12px',
+                                border: '1px solid #ddd',
+                                borderRadius: '6px'
+                              }}>
+                                {claim.correctionCompletedAt ? (
+                                  <>
+                                    <p>
+                                      <strong>Corrección terminada:</strong>{' '}
+                                      {new Date(
+                                        claim.correctionCompletedAt
+                                      ).toLocaleString()}
+                                    </p>
+
+                                    {claim.correctionCompletionNotes && (
+                                      <p>
+                                        <strong>Trabajo realizado:</strong>{' '}
+                                        {claim.correctionCompletionNotes}
+                                      </p>
+                                    )}
+
+                                    {claim.correctionReviewDeadline && (
+                                      <p>
+                                        <strong>Fin del nuevo plazo de revisión:</strong>{' '}
+                                        {new Date(
+                                          claim.correctionReviewDeadline
+                                        ).toLocaleString()}
+                                      </p>
+                                    )}
+
+                                    <p>
+                                      La corrección fue notificada.
+                                      Está pendiente la revisión del cliente.
+                                      No se liberan fondos por este aviso.
+                                    </p>
+                                  </>
+                                ) : job.status ===
+                                  'AWAITING_CLIENT_CONFIRMATION' ? (
+                                  <>
+                                    <p>
+                                      Aceptaste corregir el trabajo.
+                                      Cuando termines, explica qué realizaste.
+                                    </p>
+
+                                    <label>
+                                      Descripción de las correcciones
+                                      <textarea
+                                        rows={4}
+                                        maxLength={4000}
+                                        value={
+                                          borradoresCorreccionTerminada[
+                                            claim.id
+                                          ] || ''
+                                        }
+                                        onChange={e =>
+                                          setBorradoresCorreccionTerminada(
+                                            prev => ({
+                                              ...prev,
+                                              [claim.id]: e.target.value
+                                            })
+                                          )
+                                        }
+                                        style={{
+                                          display: 'block',
+                                          width: '100%',
+                                          marginTop: '8px'
+                                        }}
+                                        placeholder={
+                                          'Describe las correcciones realizadas.'
+                                        }
+                                      />
+                                    </label>
+
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        notificarCorreccionTerminada(
+                                          job.id,
+                                          claim.id
+                                        )
+                                      }
+                                      disabled={
+                                        respuestaReclamacionEnProceso !== null ||
+                                        (
+                                          borradoresCorreccionTerminada[
+                                            claim.id
+                                          ] || ''
+                                        ).trim().length < 10
+                                      }
+                                      style={{ marginTop: '10px' }}
+                                    >
+                                      {respuestaReclamacionEnProceso === claim.id
+                                        ? 'Registrando...'
+                                        : 'Corrección terminada'}
+                                    </button>
+                                  </>
+                                ) : (
+                                  <p>
+                                    La notificación no está disponible
+                                    en el estado actual del trabajo.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            {claim.status === 'PENDING' &&
+                              job.status ===
+                                'AWAITING_CLIENT_CONFIRMATION' && (
+                              <div style={{ marginTop: '12px' }}>
+                                <label>
+                                  Explicación de tu respuesta
+                                  <textarea
+                                    rows={4}
+                                    maxLength={4000}
+                                    value={
+                                      borradoresReclamacionFinalizacion[
+                                        claim.id
+                                      ] || ''
+                                    }
+                                    onChange={e =>
+                                      setBorradoresReclamacionFinalizacion(
+                                        prev => ({
+                                          ...prev,
+                                          [claim.id]: e.target.value
+                                        })
+                                      )
+                                    }
+                                    placeholder={
+                                      'Explica las correcciones que harás ' +
+                                      'o el motivo de tu desacuerdo.'
+                                    }
+                                    style={{
+                                      display: 'block',
+                                      width: '100%',
+                                      marginTop: '8px'
+                                    }}
+                                  />
+                                </label>
+
+                                <p>
+                                  La explicación debe tener entre
+                                  10 y 4000 caracteres.
+                                </p>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    responderReclamacionFinalizacion(
+                                      job.id,
+                                      claim.id,
+                                      'ACCEPT_CORRECTION'
+                                    )
+                                  }
+                                  disabled={
+                                    respuestaReclamacionEnProceso !== null ||
+                                    (borradoresReclamacionFinalizacion[
+                                      claim.id
+                                    ] || '').trim().length < 10
+                                  }
+                                >
+                                  Aceptar corrección
+                                </button>
+
+                                {' '}
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    responderReclamacionFinalizacion(
+                                      job.id,
+                                      claim.id,
+                                      'DISPUTE'
+                                    )
+                                  }
+                                  disabled={
+                                    respuestaReclamacionEnProceso !== null ||
+                                    (borradoresReclamacionFinalizacion[
+                                      claim.id
+                                    ] || '').trim().length < 10
+                                  }
+                                >
+                                  Disputar reclamación
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
+
 
               {(job.city || job.state) && (
                 <p>
