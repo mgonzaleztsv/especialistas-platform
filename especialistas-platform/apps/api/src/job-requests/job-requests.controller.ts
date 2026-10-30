@@ -2095,6 +2095,67 @@ return {
     });
   }
 
+  @Get(':id/completion-claims')
+  async getCompletionClaims(
+    @Req() req: any,
+    @Param('id') jobRequestId: string
+  ) {
+    const userId = req.user.userId;
+
+    const job = await this.prisma.jobRequest.findUnique({
+      where: { id: jobRequestId },
+      select: {
+        id: true,
+        client: {
+          select: { userId: true }
+        },
+        proposals: {
+          where: { status: 'ACCEPTED' },
+          select: {
+            specialist: {
+              select: { userId: true }
+            }
+          }
+        }
+      }
+    });
+
+    if (!job) {
+      throw new NotFoundException(
+        'El trabajo no existe'
+      );
+    }
+
+    const isClient = job.client.userId === userId;
+
+    const isSpecialist = job.proposals.some(
+      proposal => proposal.specialist.userId === userId
+    );
+
+    if (!isClient && !isSpecialist) {
+      throw new ForbiddenException(
+        'No tienes autorización para consultar estas reclamaciones'
+      );
+    }
+
+    return this.prisma.completionClaim.findMany({
+      where: { jobRequestId },
+      select: {
+        id: true,
+        jobRequestId: true,
+        description: true,
+        status: true,
+        specialistResponseNotes: true,
+        specialistRespondedAt: true,
+        resolutionNotes: true,
+        resolvedAt: true,
+        createdAt: true,
+        updatedAt: true
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
   @Post(':id/completion-claims')
   async createCompletionClaim(
     @Req() req: any,
@@ -2183,6 +2244,118 @@ return {
             description,
             status: 'PENDING'
           }
+        });
+      }, { isolationLevel: 'Serializable' })
+    );
+  }
+
+  @Post(':id/completion-claims/:claimId/respond')
+  async respondCompletionClaim(
+    @Req() req: any,
+    @Param('id') jobRequestId: string,
+    @Param('claimId') claimId: string,
+    @Body() body: any
+  ) {
+    const action = String(body?.action ?? '').trim().toUpperCase();
+    const notes = String(body?.notes ?? '').trim();
+
+    if (!['ACCEPT_CORRECTION', 'DISPUTE'].includes(action)) {
+      throw new BadRequestException(
+        'La respuesta debe ser ACCEPT_CORRECTION o DISPUTE'
+      );
+    }
+
+    if (notes.length < 10 || notes.length > 4000) {
+      throw new BadRequestException(
+        'La explicación debe contener entre 10 y 4000 caracteres'
+      );
+    }
+
+    const specialist = await this.prisma.specialist.findUnique({
+      where: { userId: req.user.userId }
+    });
+
+    if (!specialist) {
+      throw new BadRequestException(
+        'El usuario no tiene perfil de especialista'
+      );
+    }
+
+    return this.retryTransaction(() =>
+      this.prisma.$transaction(async (tx) => {
+        const lockedJobs = await tx.$queryRaw`
+          SELECT "id"
+          FROM "JobRequest"
+          WHERE "id" = ${jobRequestId}
+          FOR UPDATE
+        `;
+
+        if (!Array.isArray(lockedJobs) || lockedJobs.length !== 1) {
+          throw new ConflictException(
+            'El trabajo ya no está disponible'
+          );
+        }
+
+        const job = await tx.jobRequest.findFirst({
+          where: {
+            id: jobRequestId,
+            status: 'AWAITING_CLIENT_CONFIRMATION',
+            proposals: {
+              some: {
+                specialistId: specialist.id,
+                status: 'ACCEPTED'
+              }
+            }
+          },
+          select: { id: true }
+        });
+
+        if (!job) {
+          throw new ConflictException(
+            'Solo el especialista contratado puede responder'
+          );
+        }
+
+        const claim = await tx.completionClaim.findFirst({
+          where: {
+            id: claimId,
+            jobRequestId,
+            status: 'PENDING'
+          },
+          select: { id: true }
+        });
+
+        if (!claim) {
+          throw new ConflictException(
+            'La reclamación no existe o ya fue respondida'
+          );
+        }
+
+        const status = action === 'ACCEPT_CORRECTION'
+          ? 'CORRECTION_REQUESTED'
+          : 'DISPUTED';
+
+        const updated = await tx.completionClaim.updateMany({
+          where: {
+            id: claimId,
+            jobRequestId,
+            status: 'PENDING'
+          },
+          data: {
+            status,
+            specialistResponseNotes: notes,
+            specialistRespondedAt: new Date()
+          }
+        });
+
+        if (updated.count !== 1) {
+          throw new ConflictException(
+            'La reclamación cambió de estado'
+          );
+        }
+
+        return tx.completionClaim.findUniqueOrThrow({
+          where: { id: claimId }
         });
       }, { isolationLevel: 'Serializable' })
     );

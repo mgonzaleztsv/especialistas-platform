@@ -576,6 +576,8 @@ model CompletionClaim {
   clientId       String
   description    String
   status         CompletionClaimStatus @default(PENDING)
+  specialistResponseNotes String?
+  specialistRespondedAt   DateTime?
   resolutionNotes String?
   resolvedAt     DateTime?
   createdAt      DateTime              @default(now())

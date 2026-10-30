@@ -31,6 +31,12 @@ export default function MisSolicitudes() {
   const [submittingReview, setSubmittingReview] = useState<string | null>(null);
   const [processingPayment, setProcessingPayment] = useState<string | null>(null);
   const [confirmingCompletion, setConfirmingCompletion] = useState<string | null>(null);
+  const [completionClaims, setCompletionClaims] = useState<Record<string, any[]>>({});
+  const [loadingCompletionClaims, setLoadingCompletionClaims] = useState<string | null>(null);
+  const [completionClaimJobId, setCompletionClaimJobId] = useState<string | null>(null);
+  const [completionClaimDrafts, setCompletionClaimDrafts] = useState<Record<string, string>>({});
+  const [submittingCompletionClaim, setSubmittingCompletionClaim] = useState<string | null>(null);
+
   const [confirmingCancellation, setConfirmingCancellation] = useState<string | null>(null);
   const [confirmingProposalRejection, setConfirmingProposalRejection] = useState<string | null>(null);
   const [terminationJobId, setTerminationJobId] = useState<string | null>(null);
@@ -381,6 +387,56 @@ export default function MisSolicitudes() {
       setError(e.message || 'No se pudo confirmar el pago.');
     } finally {
       setProcessingPayment(null);
+    }
+  }
+
+  async function loadCompletionClaims(jobId: string) {
+    setLoadingCompletionClaims(jobId);
+    setError('');
+
+    try {
+      const claims = await api(`/job-requests/${jobId}/completion-claims`);
+      setCompletionClaims(prev => ({
+        ...prev,
+        [jobId]: claims
+      }));
+    } catch (e: any) {
+      setError(e.message || 'No se pudieron consultar las reclamaciones.');
+    } finally {
+      setLoadingCompletionClaims(null);
+    }
+  }
+
+  async function submitCompletionClaim(jobId: string) {
+    const description = (completionClaimDrafts[jobId] || '').trim();
+
+    if (description.length < 10 || description.length > 4000) {
+      setError('Describe los defectos en un texto de 10 a 4000 caracteres.');
+      return;
+    }
+
+    setSubmittingCompletionClaim(jobId);
+    setError('');
+
+    try {
+      await api(`/job-requests/${jobId}/completion-claims`, {
+        method: 'POST',
+        body: JSON.stringify({ description })
+      });
+
+      const claims = await api(`/job-requests/${jobId}/completion-claims`);
+      setCompletionClaims(prev => ({
+        ...prev,
+        [jobId]: claims
+      }));
+      setCompletionClaimJobId(null);
+      setCompletionClaimDrafts(prev => ({ ...prev, [jobId]: '' }));
+      setConfirmingCompletion(null);
+    } catch (e: any) {
+      setError(e.message || 'No se pudo registrar la reclamación.');
+      await loadCompletionClaims(jobId);
+    } finally {
+      setSubmittingCompletionClaim(null);
     }
   }
 
@@ -1264,6 +1320,136 @@ export default function MisSolicitudes() {
                     : 'Confirmar pago'}
                 </button>
               </div>
+            )}
+
+            {job.status === 'AWAITING_CLIENT_CONFIRMATION' && (
+              <section style={{
+                marginTop: '16px',
+                padding: '14px',
+                border: '1px solid #ddd',
+                borderRadius: '10px'
+              }}>
+                <h4>Revisión y reclamaciones del trabajo</h4>
+                <p>
+                  Si encuentras defectos, puedes presentar una reclamación
+                  dentro del plazo de revisión acordado.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => loadCompletionClaims(job.id)}
+                  disabled={loadingCompletionClaims === job.id}
+                >
+                  {loadingCompletionClaims === job.id
+                    ? 'Consultando...'
+                    : 'Consultar reclamaciones'}
+                </button>
+
+                {completionClaims[job.id] && (
+                  <div style={{ marginTop: '12px' }}>
+                    {completionClaims[job.id].length === 0 && (
+                      <p>No hay reclamaciones registradas.</p>
+                    )}
+
+                    {completionClaims[job.id].map((claim: any) => (
+                      <div key={claim.id} style={{
+                        padding: '12px',
+                        border: '1px solid #ddd',
+                        borderRadius: '8px',
+                        marginBottom: '10px'
+                      }}>
+                        <p><strong>Estado:</strong> {{
+                          PENDING: 'Pendiente de respuesta',
+                          CORRECTION_REQUESTED: 'Correcciones aceptadas',
+                          DISPUTED: 'En disputa',
+                          RESOLVED: 'Resuelta',
+                          REJECTED: 'Rechazada'
+                        }[claim.status as 'PENDING' | 'CORRECTION_REQUESTED' |
+                          'DISPUTED' | 'RESOLVED' | 'REJECTED'] || claim.status}</p>
+                        <p><strong>Reclamación:</strong> {claim.description}</p>
+                        <p><strong>Presentada:</strong>{' '}
+                          {new Date(claim.createdAt).toLocaleString()}
+                        </p>
+                        {claim.specialistResponseNotes && (
+                          <p><strong>Respuesta del especialista:</strong>{' '}
+                            {claim.specialistResponseNotes}
+                          </p>
+                        )}
+                        {claim.specialistRespondedAt && (
+                          <p><strong>Respondida:</strong>{' '}
+                            {new Date(claim.specialistRespondedAt).toLocaleString()}
+                          </p>
+                        )}
+                        {claim.resolutionNotes && (
+                          <p><strong>Resolución:</strong> {claim.resolutionNotes}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {completionClaims[job.id] &&
+                 !completionClaims[job.id].some((claim: any) =>
+                   ['PENDING', 'CORRECTION_REQUESTED', 'DISPUTED']
+                     .includes(claim.status)
+                 ) && (
+                  <div style={{ marginTop: '12px' }}>
+                    {completionClaimJobId !== job.id ? (
+                      <button
+                        type="button"
+                        onClick={() => setCompletionClaimJobId(job.id)}
+                      >
+                        Presentar reclamación de revisión
+                      </button>
+                    ) : (
+                      <div>
+                        <label htmlFor={`completion-claim-${job.id}`}>
+                          Describe los defectos detectados
+                        </label>
+                        <textarea
+                          id={`completion-claim-${job.id}`}
+                          value={completionClaimDrafts[job.id] || ''}
+                          onChange={e => setCompletionClaimDrafts(prev => ({
+                            ...prev,
+                            [job.id]: e.target.value
+                          }))}
+                          maxLength={4000}
+                          rows={5}
+                          style={{ display: 'block', width: '100%',
+                            boxSizing: 'border-box', marginTop: '8px' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => submitCompletionClaim(job.id)}
+                          disabled={submittingCompletionClaim === job.id}
+                        >
+                          {submittingCompletionClaim === job.id
+                            ? 'Enviando...'
+                            : 'Enviar reclamación'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCompletionClaimJobId(null)}
+                          disabled={submittingCompletionClaim === job.id}
+                          style={{ marginLeft: '8px' }}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {completionClaims[job.id]?.some((claim: any) =>
+                  ['PENDING', 'CORRECTION_REQUESTED', 'DISPUTED']
+                    .includes(claim.status)
+                ) && (
+                  <p>
+                    Hay una reclamación abierta. La confirmación del
+                    trabajo y la liberación del pago están bloqueadas.
+                  </p>
+                )}
+              </section>
             )}
 
             {job.status === 'AWAITING_CLIENT_CONFIRMATION' && (
