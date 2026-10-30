@@ -183,6 +183,74 @@ async function verificarEscenario(action, horas) {
       e => e.status === 409
     );
 
+
+    // PASO 907: verificar la ruta real de confirmación de pago.
+    async function confirmarSinLiberacion(momento) {
+      await assert.rejects(
+        controller.confirmJobCompletion(
+          { user: { userId: clientUserId } },
+          jobId
+        ),
+        error => {
+          assert.match(
+            String(error?.message || ''),
+            /reclamaci/i,
+            'La confirmación debe rechazarse por la reclamación, ' +
+            'no simplemente porque la simulación esté desactivada'
+          );
+          return true;
+        }
+      );
+
+      const pago = await db.payment.findUniqueOrThrow({
+        where: { id: paymentId }
+      });
+
+      const trabajo = await db.jobRequest.findUniqueOrThrow({
+        where: { id: jobId }
+      });
+
+      assert.equal(pago.status, 'PAID');
+      assert.equal(pago.releasedAt, null);
+      assert.equal(
+        trabajo.status,
+        'AWAITING_CLIENT_CONFIRMATION'
+      );
+
+      console.log(
+        'CORRECTO - Confirmación bloqueada: ' + momento
+      );
+    }
+
+    // 907.1: reclamación pendiente después de la corrección.
+    await confirmarSinLiberacion(
+      'corrección pendiente de revisión'
+    );
+
+    // 907.2: el plazo vencido NO autoriza liberar fondos.
+    await db.completionClaim.update({
+      where: { id: claim.id },
+      data: {
+        correctionReviewDeadline: new Date(
+          Date.now() - 60000
+        )
+      }
+    });
+
+    await confirmarSinLiberacion(
+      'segundo plazo de revisión vencido'
+    );
+
+    // Restablecer el plazo temporal para continuar
+    // con la aceptación o disputa prevista en el paso 904.
+    await db.completionClaim.update({
+      where: { id: claim.id },
+      data: {
+        correctionReviewDeadline:
+          finished.correctionReviewDeadline
+      }
+    });
+
     // 4. El cliente acepta o disputa las correcciones.
 
     const notes = action === 'ACCEPT'
@@ -200,6 +268,15 @@ async function verificarEscenario(action, horas) {
       action === 'ACCEPT' ? 'RESOLVED' : 'DISPUTED';
 
     assert.equal(review.status, expectedStatus);
+
+
+    // 907.3: incluso con la respuesta del cliente registrada,
+    // no se permite liberar fondos sin autorización financiera.
+    await confirmarSinLiberacion(
+      action === 'ACCEPT'
+        ? 'correcciones aceptadas por el cliente'
+        : 'correcciones disputadas por el cliente'
+    );
 
     // 5. La segunda revisión no puede duplicarse.
 
