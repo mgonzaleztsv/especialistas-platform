@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const {
   JobRequestsController
 } = require('../dist/job-requests/job-requests.controller.js');
@@ -29,9 +29,9 @@ test('809.1 - Reclamación y confirmación compiten sin reclamación previa', as
   assert.equal(u.port, '5433');
   assert.equal(u.pathname, '/connectpro_test');
 
-  const db = new PrismaClient();
-  const first = new PrismaClient();
-  const second = new PrismaClient();
+  const db = createTestPrismaClient();
+  const first = createTestPrismaClient();
+  const second = createTestPrismaClient();
   const marker = randomUUID().slice(0, 12);
 
   let userId, specialistUserId, clientId, specialistId;

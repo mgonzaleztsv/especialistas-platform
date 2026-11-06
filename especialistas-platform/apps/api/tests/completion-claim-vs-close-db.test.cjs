@@ -2,7 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { PrismaClient, Prisma } = require('@prisma/client');
+const { Prisma } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const {
   JobRequestsController
 } = require('../dist/job-requests/job-requests.controller.js');
@@ -94,9 +95,9 @@ test('803.1 - Reclamación y cierre no pueden prosperar juntos', async () => {
   assert.equal(u.pathname, '/connectpro_test');
   assert.notEqual(process.env.INTERNAL_MVP_PAYMENTS_ENABLED, 'true');
 
-  const db = new PrismaClient();
-  const first = new PrismaClient();
-  const second = new PrismaClient();
+  const db = createTestPrismaClient();
+  const first = createTestPrismaClient();
+  const second = createTestPrismaClient();
   const marker = randomUUID().slice(0, 12);
 
   let userId = null;

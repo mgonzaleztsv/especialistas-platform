@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 
 const {
   JobRequestsController
@@ -29,9 +29,9 @@ for (const decision of ['RESOLVED', 'REJECTED']) {
     async () => {
       verificarBase();
 
-      const db = new PrismaClient();
-      const adminDb = new PrismaClient();
-      const clientDb = new PrismaClient();
+      const db = createTestPrismaClient();
+      const adminDb = createTestPrismaClient();
+      const clientDb = createTestPrismaClient();
 
       const marker = randomUUID().slice(0, 12);
 

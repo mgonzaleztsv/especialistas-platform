@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { URL } = require('node:url');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const { JobRequestsController } = require(
   '../dist/job-requests/job-requests.controller.js'
 );
@@ -15,7 +15,7 @@ async function main() {
   assert.equal(parsed.pathname, '/connectpro_test');
   assert.equal(parsed.username, 'connectpro_test');
 
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
 
   try {
     const database = await prisma.$queryRaw`

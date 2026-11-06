@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const {
   StripeEventRegistryService,
 } = require('../dist/payments/stripe-event-registry.service.js');
@@ -21,7 +21,7 @@ if (process.env.STRIPE_MODE !== 'test') {
 }
 
 test('983: concurrencia real de eventos Stripe', async () => {
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
   const registry = new StripeEventRegistryService(prisma);
 
   const id = 'evt_connectpro_983_' +

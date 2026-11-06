@@ -1,7 +1,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const {
   JobRequestsController
 } = require('../dist/job-requests/job-requests.controller.js');
@@ -26,9 +26,9 @@ function controller(prisma) {
 test('751.1 - Liquidaciones simultáneas sin duplicados', async () => {
   verifyUrl();
 
-  const db = new PrismaClient();
-  const first = new PrismaClient();
-  const second = new PrismaClient();
+  const db = createTestPrismaClient();
+  const first = createTestPrismaClient();
+  const second = createTestPrismaClient();
 
   let jobId = null;
   let clientUserId = null;

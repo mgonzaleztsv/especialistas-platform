@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const {
   JobRequestsController
 } = require('../dist/job-requests/job-requests.controller.js');
@@ -16,7 +16,7 @@ if (
   throw Error('ALTO: Base de pruebas incorrecta');
 }
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 const rollback = new Error('ROLLBACK_INTENCIONAL');
 
 test('1017: historial real, permisos y pagos', async () => {

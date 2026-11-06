@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 
 require('reflect-metadata');
 
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 
 const {
   JobRequestsController
@@ -30,9 +30,9 @@ function crearControlador(prisma) {
 test('869.1 - Solo una resolución administrativa concurrente prevalece', async () => {
   verificarBase();
 
-  const db = new PrismaClient();
-  const first = new PrismaClient();
-  const second = new PrismaClient();
+  const db = createTestPrismaClient();
+  const first = createTestPrismaClient();
+  const second = createTestPrismaClient();
 
   const id = () => crypto.randomUUID();
   const suffix = id();

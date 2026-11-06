@@ -1,7 +1,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 
 const {
   JobRequestsController
@@ -51,7 +51,7 @@ function request(userId) {
 async function withRollback(callback) {
   validateDatabaseUrl();
 
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
 
   try {
     await prisma.$connect();
@@ -99,7 +99,7 @@ async function withRollback(callback) {
 test('715.2 - Controlador transaccional preparado', async () => {
   validateDatabaseUrl();
 
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
 
   try {
     await prisma.$connect();

@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const { URL } = require('node:url');
 const { JobRequestsController } = require(
   '../dist/job-requests/job-requests.controller.js'
@@ -22,7 +22,7 @@ async function main() {
     'false'
   );
 
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
 
   try {
     const db = await prisma.$queryRaw`

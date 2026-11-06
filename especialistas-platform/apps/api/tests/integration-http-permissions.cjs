@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const http = require('node:http');
 const jwt = require('jsonwebtoken');
 const { URL } = require('node:url');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const { Test } = require('@nestjs/testing');
 
 async function main() {
@@ -21,7 +21,7 @@ async function main() {
   assert.ok(secret && secret.length >= 32);
   assert.notEqual(secret, 'dev-secret');
 
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
   let app;
 
   try {

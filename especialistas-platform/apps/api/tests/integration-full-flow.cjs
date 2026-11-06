@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
 const { URL } = require('node:url');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const { JobRequestsController } = require(
   '../dist/job-requests/job-requests.controller.js'
 );
@@ -24,7 +24,7 @@ async function main() {
     process.env.WORK_ORDER_EXPIRATION_ENABLED, 'false'
   );
 
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
   let jobId = null;
 
   try {

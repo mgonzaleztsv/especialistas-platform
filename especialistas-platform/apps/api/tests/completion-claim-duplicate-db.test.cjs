@@ -1,7 +1,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 
 function checkDatabase() {
   const u = new URL(process.env.DATABASE_URL || '');
@@ -13,7 +13,7 @@ function checkDatabase() {
 
 test('790.1 - Duplicados rechazados e historial permitido', async () => {
   checkDatabase();
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
 
   try {
     await prisma.$connect();

@@ -1,7 +1,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const {
   JobRequestsController
 } = require('../dist/job-requests/job-requests.controller.js');
@@ -20,7 +20,7 @@ function verifyEnvironment() {
 test('750.1 - Liquidación única mediante controlador real', async () => {
   verifyEnvironment();
 
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
 
   try {
     await prisma.$connect();

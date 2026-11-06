@@ -1,7 +1,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 
 const ROLLBACK = 'SETTLEMENT_TEST_ROLLBACK_747';
 
@@ -16,7 +16,7 @@ function checkUrl() {
 test('747.1 - Una liquidación no puede repetirse', async () => {
   checkUrl();
 
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
 
   try {
     await prisma.$connect();

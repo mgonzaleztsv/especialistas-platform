@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 
 const {
   JobRequestsController
@@ -32,7 +32,7 @@ function crearControlador(prisma) {
 async function verificarEscenario(action, horas) {
   verificarBase();
 
-  const db = new PrismaClient();
+  const db = createTestPrismaClient();
   const marker = randomUUID().replace(/-/g, '').slice(0, 16);
 
   let clientUserId = null;

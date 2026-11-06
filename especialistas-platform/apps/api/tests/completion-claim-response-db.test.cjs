@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { randomUUID } = require('node:crypto');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const {
   JobRequestsController
 } = require('../dist/job-requests/job-requests.controller.js');
@@ -13,7 +13,7 @@ test('826.1 - Respuestas reales y pago bloqueado', async () => {
   assert.equal(url.port, '5433');
   assert.equal(url.pathname, '/connectpro_test');
 
-  const db = new PrismaClient();
+  const db = createTestPrismaClient();
   const marker = randomUUID().slice(0, 12);
   let clientUserId, specialistUserId, clientId, specialistId;
   let categoryId, jobId;

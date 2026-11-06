@@ -1,7 +1,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { PrismaClient, Prisma } = require('@prisma/client');
+const { Prisma } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const {
   JobRequestsController
 } = require('../dist/job-requests/job-requests.controller.js');
@@ -54,7 +55,7 @@ const req = user => ({ user: { userId: user.id } });
 test('725.1 - Contratación completa con PostgreSQL', async () => {
   validateDestination();
 
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
 
   try {
     await prisma.$connect();

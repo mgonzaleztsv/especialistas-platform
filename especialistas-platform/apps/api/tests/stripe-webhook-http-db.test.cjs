@@ -5,7 +5,7 @@ const http = require('node:http');
 const Stripe = require('stripe');
 const { NestFactory } = require('@nestjs/core');
 const { Module } = require('@nestjs/common');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const { StripeWebhookController } =
   require('../dist/payments/stripe-webhook.controller.js');
 const { StripeWebhookVerifierService } =
@@ -27,7 +27,7 @@ if (
 const secret = 'whsec_connectpro_http_test_986';
 process.env.STRIPE_WEBHOOK_SECRET = secret;
 
-const prisma = new PrismaClient();
+const prisma = createTestPrismaClient();
 
 const registry = new StripeEventRegistryService(prisma);
 const verifier = new StripeWebhookVerifierService();

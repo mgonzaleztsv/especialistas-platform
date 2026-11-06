@@ -1,5 +1,5 @@
 const assert = require('node:assert/strict');
-const { PrismaClient } = require('@prisma/client');
+const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const bcrypt = require('bcryptjs');
 const { URL } = require('node:url');
 
@@ -18,7 +18,7 @@ async function main() {
     throw new Error('SEGURIDAD: Base de datos no autorizada');
   }
 
-  const prisma = new PrismaClient();
+  const prisma = createTestPrismaClient();
   try {
     const database = await prisma.$queryRaw`
       SELECT current_database() AS name,
