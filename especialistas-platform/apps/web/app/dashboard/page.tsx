@@ -77,6 +77,7 @@ export default function Dashboard() {
                   <p><a href="/especialistas">Buscar especialistas</a></p>
                   <p><a href="/publicar-trabajo">Publicar trabajo</a></p>
                   <p><a href="/mis-solicitudes">Mis solicitudes</a></p>
+                   <p><a href="/historial">Historial de servicios</a></p>
                 </section>
               )}
 
@@ -110,6 +111,7 @@ export default function Dashboard() {
                   <p><a href="/perfil-especialista">Completar mi perfil profesional</a></p>
                   <p><a href="/trabajos-disponibles">Trabajos disponibles</a></p>
                   <p><a href="/mis-trabajos">Mis trabajos</a></p>
+                   <p><a href="/historial">Historial de servicios</a></p>
                 </section>
               )}
             </>

@@ -5149,6 +5149,181 @@ return {
     };
   }
 
+
+  // Historial privado de servicios terminados o cancelados.
+  // No modifica pagos, solicitudes ni órdenes de trabajo.
+  @Get('history/services')
+  async serviceHistory(@Req() req: any) {
+    const userId = req.user.userId;
+
+    const [client, specialist] = await Promise.all([
+      this.prisma.client.findUnique({
+        where: { userId },
+        select: { id: true }
+      }),
+      this.prisma.specialist.findUnique({
+        where: { userId },
+        select: { id: true }
+      })
+    ]);
+
+    const filters: Prisma.JobRequestWhereInput[] = [];
+
+    if (client) {
+      filters.push({ clientId: client.id });
+    }
+
+    if (specialist) {
+      filters.push({
+        OR: [
+          { payment: { is: {
+            specialistId: specialist.id
+          } } },
+          { workOrders: { some: {
+            status: 'ACCEPTED',
+            proposal: {
+              specialistId: specialist.id
+            }
+          } } }
+        ]
+      });
+    }
+
+    if (filters.length === 0) {
+      return [];
+    }
+
+    const jobs = await this.prisma.jobRequest.findMany({
+      where: {
+        status: { in: ['COMPLETED', 'CANCELLED'] },
+        OR: filters
+      },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        workCompletedAt: true,
+        clientId: true,
+        client: {
+          select: {
+            user: {
+              select: { name: true }
+            }
+          }
+        },
+        payment: {
+          select: {
+            amount: true,
+            currency: true,
+            status: true,
+            paidAt: true,
+            releasedAt: true,
+            refundedAt: true,
+            specialistId: true,
+            specialist: {
+              select: {
+                user: {
+                  select: { name: true }
+                }
+              }
+            }
+          }
+        },
+        workOrders: {
+          where: { status: 'ACCEPTED' },
+          orderBy: { version: 'desc' },
+          take: 1,
+          select: {
+            laborAmount: true,
+            materialsAmount: true,
+            currency: true,
+            proposal: {
+              select: {
+                specialistId: true,
+                specialist: {
+                  select: {
+                    user: {
+                      select: { name: true }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    return jobs.flatMap(job => {
+      const order = job.workOrders[0];
+      const payment = job.payment;
+      const contractedSpecialistId =
+        payment?.specialistId ??
+        order?.proposal.specialistId;
+
+      const isClient =
+        !!client && job.clientId === client.id;
+
+      const isSpecialist =
+        !!specialist &&
+        contractedSpecialistId === specialist.id;
+
+      const result = [];
+
+      const agreedAmount = order
+        ? Math.round(
+            (Number(order.laborAmount) +
+             Number(order.materialsAmount)) * 100
+          ) / 100
+        : payment
+          ? Number(payment.amount)
+          : null;
+
+      const summary = {
+        id: job.id,
+        title: job.title,
+        status: job.status,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        workCompletedAt: job.workCompletedAt,
+        agreedAmount,
+        currency: order?.currency ??
+          payment?.currency ?? 'USD',
+        paymentStatus: payment?.status ?? null,
+        paymentAmount: payment?.paidAt
+          ? Number(payment.amount)
+          : null,
+        paidAt: payment?.paidAt ?? null,
+        releasedAt: payment?.releasedAt ?? null,
+        refundedAt: payment?.refundedAt ?? null
+      };
+
+      if (isClient) {
+        result.push({
+          ...summary,
+          role: 'CLIENT',
+          counterpartName:
+            payment?.specialist.user.name ??
+            order?.proposal.specialist.user.name ??
+            null
+        });
+      }
+
+      if (isSpecialist) {
+        result.push({
+          ...summary,
+          role: 'SPECIALIST',
+          counterpartName: job.client.user.name
+        });
+      }
+
+      return result;
+    });
+  }
+
   @Get('me')
   async myRequests(@Req() req: any) {
     const client = await this.prisma.client.findUnique({
