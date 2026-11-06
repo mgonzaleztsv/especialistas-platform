@@ -1,7 +1,10 @@
 {
   "name": "especialistas-platform",
   "private": true,
-  "workspaces": ["apps/api", "apps/web"],
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
     "dev:api": "npm run dev -w apps/api",
@@ -15,6 +18,9 @@
     "prisma": "^6.0.0"
   },
   "dependencies": {
+    "@nestjs/common": "12.4.0",
+    "@nestjs/core": "12.4.0",
+    "@nestjs/platform-express": "12.4.0",
     "@prisma/client": "^6.0.0"
   }
 }
