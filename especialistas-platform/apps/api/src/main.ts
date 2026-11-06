@@ -11,10 +11,12 @@ loadEnv({ path: selectedEnv, override: false });
 
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  app.use(helmet());
   app.setGlobalPrefix('api/v1');
   const configuredOrigins = (
     process.env.CORS_ORIGINS || ''

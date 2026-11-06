@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { PaymentsModule } from './payments/payments.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from './prisma/prisma.module';
@@ -10,5 +11,5 @@ import { CategoriesModule } from './categories/categories.module';
 import { JobRequestsModule } from './job-requests/job-requests.module';
 import { NotificationsModule } from './notifications/notifications.module';
 
-@Module({ imports: [PaymentsModule, ScheduleModule.forRoot(), PrismaModule, AuthModule, UsersModule, ClientsModule, SpecialistsModule, CategoriesModule, JobRequestsModule, NotificationsModule] })
+@Module({ imports: [PaymentsModule, ScheduleModule.forRoot(), ThrottlerModule.forRoot([{ ttl: 60000, limit: 5 }]), PrismaModule, AuthModule, UsersModule, ClientsModule, SpecialistsModule, CategoriesModule, JobRequestsModule, NotificationsModule] })
 export class AppModule {}
