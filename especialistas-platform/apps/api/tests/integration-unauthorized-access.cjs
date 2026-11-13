@@ -96,7 +96,7 @@ async function main() {
     for (const [name, operation] of operations) {
       await assert.rejects(
         operation(),
-        /no pertenece|no tienes acceso|no existe/i
+        /no pertenece|no tienes acceso|no tienes autorización|no existe/i
       );
       console.log('CORRECTO - Acceso rechazado:', name);
       passed++;
