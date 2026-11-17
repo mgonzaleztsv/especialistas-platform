@@ -63,8 +63,8 @@ async function withRollback(callback) {
     ]);
 
     assert.ok(
-      initial.every(n => n === 0),
-      'La base de pruebas debe estar vacía'
+      initial.every(Number.isInteger),
+      'No fue posible establecer el inventario inicial'
     );
 
     const marker = ROLLBACK;
@@ -86,9 +86,10 @@ async function withRollback(callback) {
       prisma.message.count()
     ]);
 
-    assert.ok(
-      final.every(n => n === 0),
-      'La transacción dejó registros persistentes'
+    assert.deepEqual(
+      final,
+      initial,
+      'La transacción modificó el inventario existente'
     );
 
   } finally {

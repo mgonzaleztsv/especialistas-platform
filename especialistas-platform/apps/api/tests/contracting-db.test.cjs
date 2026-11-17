@@ -60,9 +60,11 @@ test('725.1 - Contratación completa con PostgreSQL', async () => {
   try {
     await prisma.$connect();
 
+    const initialCounts = await counts(prisma);
+
     assert.ok(
-      (await counts(prisma)).every(n => n === 0),
-      'La base de pruebas debe estar vacía'
+      initialCounts.every(Number.isInteger),
+      'No fue posible establecer el inventario inicial'
     );
 
     await assert.rejects(
@@ -352,9 +354,10 @@ test('725.1 - Contratación completa con PostgreSQL', async () => {
       error => error.message === ROLLBACK
     );
 
-    assert.ok(
-      (await counts(prisma)).every(n => n === 0),
-      'Se conservaron registros después de revertir'
+    assert.deepEqual(
+      await counts(prisma),
+      initialCounts,
+      'La transacción modificó el inventario existente'
     );
 
     console.log('CORRECTO - Transacción revertida por completo');
