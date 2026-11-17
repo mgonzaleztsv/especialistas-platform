@@ -5,6 +5,18 @@ const { JobRequestsController } = require(
   '../dist/job-requests/job-requests.controller.js'
 );
 
+
+const runId = process.env.CONNECTPRO_INTEGRATION_RUN_ID;
+
+assert.match(
+  runId || '',
+  /^[A-Za-z0-9_-]{8,64}$/,
+  'Identificador de integración requerido'
+);
+
+const TEST_JOB_TITLE =
+  `PRUEBA INTEGRAL CONNECTPRO 395 - ${runId}`;
+
 async function main() {
   const url = new URL(process.env.DATABASE_URL || '');
 
@@ -33,7 +45,7 @@ async function main() {
 
     const job = await prisma.jobRequest.findFirst({
       where: {
-        title: 'PRUEBA INTEGRAL CONNECTPRO 395',
+        title: TEST_JOB_TITLE,
         proposals: {
           some: {
             specialistId: specialist.specialist.id,
