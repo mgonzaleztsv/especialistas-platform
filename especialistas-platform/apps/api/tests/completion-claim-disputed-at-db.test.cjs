@@ -237,21 +237,34 @@ async function verificarEscenario(action, horas, disputaInicial = false) {
 
     // PASO 907: verificar la ruta real de confirmación de pago.
     async function confirmarSinLiberacion(momento) {
-      await assert.rejects(
-        controller.confirmJobCompletion(
-          { user: { userId: clientUserId } },
-          jobId
-        ),
-        error => {
-          assert.match(
-            String(error?.message || ''),
-            /reclamaci/i,
-            'La confirmación debe rechazarse por la reclamación, ' +
-            'no simplemente porque la simulación esté desactivada'
-          );
-          return true;
+      const previousPayments =
+        process.env.INTERNAL_MVP_PAYMENTS_ENABLED;
+
+      try {
+        process.env.INTERNAL_MVP_PAYMENTS_ENABLED = 'true';
+
+        await assert.rejects(
+          controller.confirmJobCompletion(
+            { user: { userId: clientUserId } },
+            jobId
+          ),
+          error => {
+            assert.match(
+              String(error?.message || ''),
+              /reclamaci/i,
+              'La confirmación debe rechazarse por la reclamación, ' +
+              'no simplemente porque la simulación esté desactivada'
+            );
+            return true;
+          }
+        );
+      } finally {
+        if (previousPayments === undefined) {
+          delete process.env.INTERNAL_MVP_PAYMENTS_ENABLED;
+        } else {
+          process.env.INTERNAL_MVP_PAYMENTS_ENABLED = previousPayments;
         }
-      );
+      }
 
       const pago = await db.payment.findUniqueOrThrow({
         where: { id: paymentId }
