@@ -87,6 +87,7 @@ model Specialist {
   clientReviews SpecialistReview[]
   paymentsReceived Payment[]
   stripeConnectedAccount StripeConnectedAccount?
+  stripeAccountCreationRequest StripeAccountCreationRequest?
 }
 
 model Category {
@@ -641,4 +642,34 @@ model StripeConnectedAccount {
   updatedAt           DateTime  @updatedAt
 
   specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Restrict)
+}
+enum StripeAccountCreationStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  UNCERTAIN
+}
+
+model StripeAccountCreationRequest {
+  id                 String                      @id @default(uuid())
+  specialistId       String                      @unique
+  idempotencyKey     String                      @unique
+  status             StripeAccountCreationStatus @default(PENDING)
+  country            String
+  livemode           Boolean                     @default(false)
+  stripeAccountId    String?                     @unique
+  attemptCount       Int                         @default(0)
+  processingToken    String?                     @unique
+  processingAt       DateTime?
+  firstAttemptAt     DateTime?
+  lastAttemptAt      DateTime?
+  completedAt        DateTime?
+  lastErrorCode      String?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Restrict)
+
+  @@index([status, processingAt])
 }
