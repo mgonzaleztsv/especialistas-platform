@@ -1,6 +1,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+
+// Validar antes de importar dependencias del proyecto.
+verifyEnvironment();
+
 const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const {
   JobRequestsController
@@ -14,7 +18,8 @@ function verifyEnvironment() {
   assert.ok(['localhost', '127.0.0.1'].includes(parsed.hostname));
   assert.equal(parsed.port, '5433');
   assert.equal(parsed.pathname, '/connectpro_test');
-  assert.notEqual(process.env.INTERNAL_MVP_PAYMENTS_ENABLED, 'true');
+  assert.equal(process.env.INTERNAL_MVP_PAYMENTS_ENABLED, 'false',
+    'Las pruebas requieren pagos simulados desactivados');
 }
 
 test('750.1 - Liquidación única mediante controlador real', async () => {
@@ -25,8 +30,14 @@ test('750.1 - Liquidación única mediante controlador real', async () => {
   try {
     await prisma.$connect();
 
-    assert.equal(await prisma.payment.count(), 0);
-    assert.equal(await prisma.paymentMovement.count(), 0);
+    // Conservar el estado economico anterior a la prueba.
+    const paymentsBefore = await prisma.payment.findMany({
+      orderBy: { id: 'asc' }
+    });
+
+    const movementsBefore = await prisma.paymentMovement.findMany({
+      orderBy: { id: 'asc' }
+    });
 
     await assert.rejects(
       prisma.$transaction(async tx => {
@@ -184,8 +195,20 @@ test('750.1 - Liquidación única mediante controlador real', async () => {
       error => error.message === ROLLBACK
     );
 
-    assert.equal(await prisma.payment.count(), 0);
-    assert.equal(await prisma.paymentMovement.count(), 0);
+    // Verificar que el rollback conserva los registros previos.
+    assert.deepEqual(
+      await prisma.payment.findMany({
+        orderBy: { id: 'asc' }
+      }),
+      paymentsBefore
+    );
+
+    assert.deepEqual(
+      await prisma.paymentMovement.findMany({
+        orderBy: { id: 'asc' }
+      }),
+      movementsBefore
+    );
 
     console.log('CORRECTO - Transacción revertida');
 

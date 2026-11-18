@@ -1,11 +1,17 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+
+// Validar antes de importar dependencias del proyecto.
+checkUrl();
+
 const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 
 const ROLLBACK = 'SETTLEMENT_TEST_ROLLBACK_747';
 
 function checkUrl() {
+  assert.equal(process.env.INTERNAL_MVP_PAYMENTS_ENABLED, 'false',
+    'Las pruebas requieren pagos simulados desactivados');
   const url = new URL(process.env.DATABASE_URL || '');
   assert.ok(['postgres:', 'postgresql:'].includes(url.protocol));
   assert.ok(['localhost', '127.0.0.1'].includes(url.hostname));
@@ -20,6 +26,16 @@ test('747.1 - Una liquidación no puede repetirse', async () => {
 
   try {
     await prisma.$connect();
+
+    // Conservar el estado economico anterior a la prueba.
+    const paymentsBefore = await prisma.payment.findMany({
+      orderBy: { id: 'asc' }
+    });
+
+    const movementsBefore = await prisma.paymentMovement.findMany({
+      orderBy: { id: 'asc' }
+    });
+
 
     await assert.rejects(
       prisma.$transaction(async tx => {
@@ -132,8 +148,20 @@ test('747.1 - Una liquidación no puede repetirse', async () => {
       error => error.message === ROLLBACK
     );
 
-    assert.equal(await prisma.payment.count(), 0);
-    assert.equal(await prisma.paymentMovement.count(), 0);
+    // Verificar que el rollback conserva los registros previos.
+    assert.deepEqual(
+      await prisma.payment.findMany({
+        orderBy: { id: 'asc' }
+      }),
+      paymentsBefore
+    );
+
+    assert.deepEqual(
+      await prisma.paymentMovement.findMany({
+        orderBy: { id: 'asc' }
+      }),
+      movementsBefore
+    );
 
     console.log('CORRECTO - Registros económicos revertidos');
 

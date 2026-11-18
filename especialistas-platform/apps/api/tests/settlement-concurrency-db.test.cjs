@@ -1,6 +1,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+
+// Validar antes de importar dependencias del proyecto.
+verifyUrl();
+
 const { createTestPrismaClient } = require('./prisma-test-client.cjs');
 const {
   JobRequestsController
@@ -12,7 +16,8 @@ function verifyUrl() {
   assert.ok(['localhost', '127.0.0.1'].includes(url.hostname));
   assert.equal(url.port, '5433');
   assert.equal(url.pathname, '/connectpro_test');
-  assert.notEqual(process.env.INTERNAL_MVP_PAYMENTS_ENABLED, 'true');
+  assert.equal(process.env.INTERNAL_MVP_PAYMENTS_ENABLED, 'false',
+    'Las pruebas requieren pagos simulados desactivados');
 }
 
 function controller(prisma) {
