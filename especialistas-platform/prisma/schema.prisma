@@ -86,6 +86,7 @@ model Specialist {
   reviews          Review[]
   clientReviews SpecialistReview[]
   paymentsReceived Payment[]
+  stripeConnectedAccount StripeConnectedAccount?
 }
 
 model Category {
@@ -623,4 +624,21 @@ model StripeWebhookEvent {
   @@index([status])
   @@index([receivedAt])
   @@index([eventType])
+}
+
+model StripeConnectedAccount {
+  id                  String    @id @default(uuid())
+  specialistId        String    @unique
+  stripeAccountId     String    @unique
+  country             String
+  livemode            Boolean   @default(false)
+  detailsSubmitted    Boolean   @default(false)
+  chargesEnabled      Boolean   @default(false)
+  payoutsEnabled      Boolean   @default(false)
+  transfersCapability String?
+  lastSyncedAt        DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  specialist Specialist @relation(fields: [specialistId], references: [id], onDelete: Restrict)
 }
