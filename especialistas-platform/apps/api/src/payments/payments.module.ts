@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StripeTestClientService } from './stripe-test-client.service';
+import { StripeConnectedAccountService } from './stripe-connected-account.service';
 import { StripeWebhookVerifierService } from './stripe-webhook-verifier.service';
 import { StripeWebhookController } from './stripe-webhook.controller';
 import { StripeEventRegistryService } from './stripe-event-registry.service';
@@ -9,11 +10,13 @@ import { StripeEventRegistryService } from './stripe-event-registry.service';
   imports: [PrismaModule],
   controllers: [StripeWebhookController],
   providers: [
+    StripeConnectedAccountService,
     StripeTestClientService,
     StripeWebhookVerifierService,
     StripeEventRegistryService,
   ],
   exports: [
+    StripeConnectedAccountService,
     StripeTestClientService,
     StripeWebhookVerifierService,
     StripeEventRegistryService,
