@@ -1,3 +1,4 @@
+import { StripeAccountCreationRequestService } from './stripe-account-creation-request.service';
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StripeTestClientService } from './stripe-test-client.service';
@@ -13,6 +14,7 @@ import { StripeEventRegistryService } from './stripe-event-registry.service';
   controllers: [StripeWebhookController],
   providers: [
     StripeAccountSyncService,
+    StripeAccountCreationRequestService,
     StripeAccountReaderService,
     StripeConnectedAccountService,
     StripeTestClientService,
@@ -21,6 +23,7 @@ import { StripeEventRegistryService } from './stripe-event-registry.service';
   ],
   exports: [
     StripeAccountSyncService,
+    StripeAccountCreationRequestService,
     StripeAccountReaderService,
     StripeConnectedAccountService,
     StripeTestClientService,
