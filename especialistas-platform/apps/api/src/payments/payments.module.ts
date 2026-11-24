@@ -9,10 +9,19 @@ import { StripeWebhookVerifierService } from './stripe-webhook-verifier.service'
 import { StripeWebhookController } from './stripe-webhook.controller';
 import { StripeEventRegistryService } from './stripe-event-registry.service';
 
+import { StripeAccountCandidateSearchService } from './stripe-account-candidate-search.service';
+import { StripeAccountCreationEvidenceService } from './stripe-account-creation-evidence.service';
+import { StripeAccountEventEvidenceService } from './stripe-account-event-evidence.service';
+import { StripeAccountReconciliationService } from './stripe-account-reconciliation.service';
+
 @Module({
   imports: [PrismaModule],
   controllers: [StripeWebhookController],
   providers: [
+    StripeAccountCandidateSearchService,
+    StripeAccountCreationEvidenceService,
+    StripeAccountEventEvidenceService,
+    StripeAccountReconciliationService,
     StripeAccountSyncService,
     StripeAccountCreationRequestService,
     StripeAccountReaderService,

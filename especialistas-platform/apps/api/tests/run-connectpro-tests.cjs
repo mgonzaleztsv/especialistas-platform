@@ -19,6 +19,16 @@ const GROUPS = {
   financialSafety: [
     'payment-safety.test.cjs',
     'stripe-webhook-signature.test.cjs'
+  ],
+  stripeReconciliation: [
+    'stripe-account-creation-identity.test.cjs',
+    'stripe-account-creation-evidence.test.cjs',
+    'stripe-account-event-evidence.test.cjs',
+    'stripe-account-candidate-search.test.cjs',
+    'stripe-account-evidence-time.test.cjs',
+    'stripe-account-reconciliation-evaluator.test.cjs',
+    'stripe-account-reconciliation.test.cjs',
+    'stripe-reconciliation-module.test.cjs'
   ]
 };
 
@@ -112,7 +122,7 @@ function runTestGroup(group) {
   console.log('CORRECTO - Pagos internos desactivados');
 
 
-  if (!['security', 'messaging', 'financialSafety'].includes(group)) {
+  if (!['security', 'messaging', 'financialSafety', 'stripeReconciliation'].includes(group)) {
     throw new Error('Grupo no autorizado');
   }
 
@@ -203,13 +213,13 @@ if (args.length === 1 && args[0] === '--list') {
 } else if (
   args.length === 2 &&
   args[0] === '--run' &&
-  ['security', 'messaging', 'financialSafety'].includes(args[1])
+  ['security', 'messaging', 'financialSafety', 'stripeReconciliation'].includes(args[1])
 ) {
   runTestGroup(args[1]);
 
 } else {
   console.error(
-    'Uso: --list o --run security|messaging|financialSafety'
+    'Uso: --list o --run security|messaging|financialSafety|stripeReconciliation'
   );
   process.exitCode = 1;
 }
