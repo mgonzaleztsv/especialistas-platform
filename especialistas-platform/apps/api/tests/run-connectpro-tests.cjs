@@ -20,6 +20,15 @@ const GROUPS = {
     'payment-safety.test.cjs',
     'stripe-webhook-signature.test.cjs'
   ],
+  stripeCreation: [
+    'stripe-account-creation-params.test.cjs',
+    'stripe-account-creation-error.test.cjs',
+    'stripe-account-creation-response.test.cjs',
+    'stripe-account-external-creation.test.cjs',
+    'stripe-account-external-protection.test.cjs',
+    'stripe-account-external-creation-db.test.cjs',
+    'stripe-account-external-module.test.cjs',
+  ],
   stripeReconciliation: [
     'stripe-account-creation-identity.test.cjs',
     'stripe-account-creation-evidence.test.cjs',
@@ -71,8 +80,22 @@ function createSafeTestEnvironment(source) {
   env.WORK_ORDER_EXPIRATION_ENABLED = 'false';
 
   for (const key of Object.keys(env)) {
-    if (/^STRIPE_/i.test(key)) {
+    if (/STRIPE/i.test(key)) {
       delete env[key];
+    }
+  }
+
+  // Excluir credenciales y desactivar Stripe por defecto.
+  env.STRIPE_MODE = 'disabled';
+
+  for (const key of Object.keys(env)) {
+    if (
+      /STRIPE/i.test(key) &&
+      key !== 'STRIPE_MODE'
+    ) {
+      throw new Error(
+        'Variable Stripe incompatible con pruebas'
+      );
     }
   }
 
@@ -122,7 +145,7 @@ function runTestGroup(group) {
   console.log('CORRECTO - Pagos internos desactivados');
 
 
-  if (!['security', 'messaging', 'financialSafety', 'stripeReconciliation'].includes(group)) {
+  if (!['security', 'messaging', 'financialSafety', 'stripeReconciliation', 'stripeCreation'].includes(group)) {
     throw new Error('Grupo no autorizado');
   }
 
@@ -213,13 +236,13 @@ if (args.length === 1 && args[0] === '--list') {
 } else if (
   args.length === 2 &&
   args[0] === '--run' &&
-  ['security', 'messaging', 'financialSafety', 'stripeReconciliation'].includes(args[1])
+  ['security', 'messaging', 'financialSafety', 'stripeReconciliation', 'stripeCreation'].includes(args[1])
 ) {
   runTestGroup(args[1]);
 
 } else {
   console.error(
-    'Uso: --list o --run security|messaging|financialSafety|stripeReconciliation'
+    'Uso: --list o --run security|messaging|financialSafety|stripeReconciliation|stripeCreation'
   );
   process.exitCode = 1;
 }

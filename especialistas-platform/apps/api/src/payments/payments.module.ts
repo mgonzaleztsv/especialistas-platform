@@ -14,10 +14,13 @@ import { StripeAccountCreationEvidenceService } from './stripe-account-creation-
 import { StripeAccountEventEvidenceService } from './stripe-account-event-evidence.service';
 import { StripeAccountReconciliationService } from './stripe-account-reconciliation.service';
 
+import { StripeAccountCreationService } from './stripe-account-creation.service';
+
 @Module({
   imports: [PrismaModule],
   controllers: [StripeWebhookController],
   providers: [
+    StripeAccountCreationService,
     StripeAccountCandidateSearchService,
     StripeAccountCreationEvidenceService,
     StripeAccountEventEvidenceService,
